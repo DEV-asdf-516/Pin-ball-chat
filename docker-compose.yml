@@ -1,0 +1,46 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./data/ollama:/root/.ollama
+
+  api:
+    build:
+      context: ./apps/api
+    ports:
+      - "8080:8080"
+    environment:
+      DB_PATH: /app/data/pinballchat.sqlite
+      PINBALLCHAT_ROOT: /app
+      AI_PROVIDER: ollama
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    volumes:
+      - ./data:/app/data
+      - ./characters:/app/characters
+      - ./user_profiles:/app/user_profiles
+      - ./plots:/app/plots
+      - ./preferences:/app/preferences
+    depends_on:
+      - ollama
+
+  web:
+    image: nginx:alpine
+    ports:
+      - "3000:80"
+    volumes:
+      - ./apps/web/src:/usr/share/nginx/html:ro
+    depends_on:
+      - api
+
+  trainer:
+    build:
+      context: ./trainer
+    profiles:
+      - trainer
+    environment:
+      DB_PATH: /workspace/data/pinballchat.sqlite
+    volumes:
+      - ./data:/workspace/data
+      - ./trainer:/workspace/trainer
