@@ -11,14 +11,17 @@ sys.path.insert(0, str(ROOT / "apps" / "api" / "src"))
 _tmp = tempfile.TemporaryDirectory()
 os.environ["DB_PATH"] = str(Path(_tmp.name) / "pinballchat.sqlite")
 
-from core.db import connect, init_db, load_resources
-from domain.services import GenerationParams, chat, create_conversation, edit_generation, regenerate, select_generation
+from core.db import connect, init_db
+from domain.content.importer import import_content_catalog
+from domain.conversations import create_conversation
+from domain.generation_params import GenerationParams
+from domain.generations import chat, edit_generation, regenerate, select_generation
 
 
 def main():
     with connect() as conn:
         init_db(conn)
-        errors = load_resources(conn, ROOT / "examples")
+        errors = import_content_catalog(conn, ROOT / "examples")
         if errors:
             raise SystemExit("\n".join(errors))
         conv = create_conversation(conn, "first_meeting", "v0.1 smoke")

@@ -1,40 +1,42 @@
 import json
-import traceback
+import logging
+from typing import Iterator
 
 from ai.errors import EmptyOutputError, OllamaBadGatewayError, OllamaTimeoutError
 from ai.registry import stream_text
 from core.db import connect, init_db
-from domain.services import GenerationParams, insert_user_turn, mark_regenerated, save_generation_output
+from domain.generation_params import GenerationParams
+from domain.generations import insert_user_turn, mark_regenerated, save_generation_output
+from domain.prompts import BuiltPrompt
+
+log = logging.getLogger(__name__)
 
 
-def sse(event, data):
+def sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-def stream_response(prepared, params: GenerationParams):
-    full_text = []
+def stream_response(prepared: dict, params: GenerationParams) -> Iterator[str]:
+    full_text: list[str] = []
+    built: BuiltPrompt = prepared["built"]
     try:
         yield sse("start", {"conversationId": prepared["conversationId"], "turnId": prepared["turnId"]})
-        for token in stream_text(prepared["prompt"], prepared["userMessage"], params.model, 0, params.num_predict, params.num_ctx, params.provider_name):
+        for token in stream_text(built.prompt, prepared["userMessage"], params.model, 0, params.num_predict, params.num_ctx, params.provider_name):
             full_text.append(token)
             yield sse("token", {"content": token})
-        output = "".join(full_text)
+        output: str = "".join(full_text)
         with connect() as conn:
             init_db(conn)
             if "messageId" in prepared:
                 insert_user_turn(conn, prepared["conversationId"], prepared["userMessage"], prepared["messageId"], prepared["turnId"], prepared["createdAt"])
             if prepared.get("currentGenerationId"):
                 mark_regenerated(conn, prepared["conversationId"], prepared["turnId"], prepared["currentGenerationId"])
-            saved = save_generation_output(
+            saved: dict = save_generation_output(
                 conn,
                 prepared["turnId"],
                 prepared["conversationId"],
-                prepared["plot"],
-                prepared["char"],
-                prepared["user"],
+                built,
                 params,
-                prepared["prompt"],
-                prepared["warnings"],
                 output,
                 prepared["actionType"],
                 None,
@@ -47,15 +49,15 @@ def stream_response(prepared, params: GenerationParams):
             "messageId": saved["messageId"],
         })
     except GeneratorExit:
-        print(f"stream aborted: turn_id={prepared['turnId']}")
+        log.info("stream aborted: turn_id=%s", prepared["turnId"])
     except OllamaTimeoutError as exc:
-        traceback.print_exception(type(exc), exc, exc.__traceback__)
+        log.exception("ollama timeout during stream")
         yield sse("error", {"error": "ollama_timeout", "message": str(exc)})
     except OllamaBadGatewayError as exc:
-        traceback.print_exception(type(exc), exc, exc.__traceback__)
+        log.exception("ollama bad gateway during stream")
         yield sse("error", {"error": "ollama_bad_gateway", "message": str(exc)})
     except EmptyOutputError as exc:
         yield sse("error", {"error": "empty_output", "message": str(exc)})
     except Exception as exc:
-        traceback.print_exception(type(exc), exc, exc.__traceback__)
+        log.exception("unexpected error during stream")
         yield sse("error", {"error": "internal_error", "message": str(exc)})

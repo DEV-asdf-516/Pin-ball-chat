@@ -1,32 +1,49 @@
 import json
 import re
+import sqlite3
+from dataclasses import dataclass
 
-from core.db import select_cols
+from core.db import fetch_all, find_by_id, select_cols
 from core.errors import NotFound
+from domain.content.reader import find_content_by_id
+from domain.content.specs import CharacterData, ContentKind, PlotData, UserProfileData, parse_content_data
+from util.string_util import strip_from
 
 
-def row_json(row, key):
+_OOC_PREFIX = "OOC:"
+
+
+@dataclass
+class BuiltPrompt:
+    prompt: str
+    warnings: list
+    plot: dict
+    char: dict
+    user: dict
+
+
+def row_json(row: sqlite3.Row | dict, key: str) -> dict:
     return json.loads(row[key])
 
 
-def parse_roleplay_input(text):
-    ooc = []
-    body_lines = []
+def parse_roleplay_input(text: str, ctx: dict) -> dict:
+    ooc: list[str] = []
+    body_lines: list[str] = []
     for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("OOC:"):
-            ooc.append(stripped[4:].strip())
+        stripped: str = line.strip()
+        if stripped.startswith(_OOC_PREFIX):
+            ooc.append(substitute_npc_pc(strip_from(stripped, len(_OOC_PREFIX)), ctx))
         else:
             body_lines.append(line)
-    body = "\n".join(body_lines).strip()
-    narrations = [match.group(1).strip() for match in re.finditer(r"\*([^*]+)\*", body) if match.group(1).strip()]
-    dialogue = re.sub(r"\*[^*]+\*", "", body)
+    body: str = "\n".join(body_lines).strip()
+    narrations: list[str] = [match.group(1).strip() for match in re.finditer(r"\*([^*]+)\*", body) if match.group(1).strip()]
+    dialogue: str = re.sub(r"\*[^*]+\*", "", body)
     dialogue = re.sub(r"[ \t]+", " ", dialogue).strip()
     return {"dialogue": dialogue, "narration": "\n".join(narrations), "ooc": "\n".join(ooc)}
 
 
-def user_input_interpretation(text):
-    parsed = parse_roleplay_input(text)
+def user_input_interpretation(text: str, ctx: dict) -> str:
+    parsed: dict = parse_roleplay_input(text, ctx)
     return "\n".join([
         "사용자 대사:",
         parsed["dialogue"] or "(없음)",
@@ -39,10 +56,10 @@ def user_input_interpretation(text):
     ])
 
 
-def render_value(value, ctx, warnings):
+def render_value(value, ctx: dict, warnings: list) -> str:
     if isinstance(value, str):
-        def replace(match):
-            name = match.group(1).strip()
+        def replace(match: re.Match) -> str:
+            name: str = match.group(1).strip()
             if name not in ctx:
                 warnings.append(f"unknown template variable: {name}")
                 return ""
@@ -55,109 +72,120 @@ def render_value(value, ctx, warnings):
     return "" if value is None else str(value)
 
 
-def split_ooc(text):
-    body, ooc = [], []
+def substitute_npc_pc(text: str, ctx: dict) -> str:
+    """OOC 등 사용자 원문에 평문으로 등장하는 NPC/PC 표기를 실제 캐릭터명으로 치환한다."""
+    text = re.sub(r"(?<![A-Za-z0-9])NPC(?![A-Za-z0-9])", ctx["char"], text)
+    text = re.sub(r"(?<![A-Za-z0-9])PC(?![A-Za-z0-9])", ctx["user"], text)
+    return text
+
+
+def split_ooc(text: str) -> tuple[str, list[str]]:
+    body: list[str] = []
+    ooc: list[str] = []
     for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("OOC:"):
-            ooc.append(stripped[4:].strip())
+        stripped: str = line.strip()
+        if stripped.startswith(_OOC_PREFIX):
+            ooc.append(strip_from(stripped, len(_OOC_PREFIX)))
         else:
             body.append(line)
     return "\n".join(body).strip(), ooc
 
 
-def render_json_source(payload):
+def render_json_source(payload: dict) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-def source_for(payload, source_text):
+def source_for(payload: dict, source_text: str | None) -> str:
     return source_text if source_text else render_json_source(payload)
 
 
-def resolve_prompt_context(conn, conversation_id):
-    conv = conn.execute(f"SELECT {select_cols('conversations')} FROM conversations WHERE id=?", (conversation_id,)).fetchone()
+def resolve_prompt_context(conn: sqlite3.Connection, conversation_id: str) -> tuple[dict, dict, dict, dict]:
+    conv: dict | None = find_by_id(conn, "conversations", conversation_id)
     if not conv:
         raise NotFound("conversation not found")
-    plot = conn.execute(f"SELECT {select_cols('plots')} FROM plots WHERE id=?", (conv["plot_id"],)).fetchone()
+    plot: dict | None = find_content_by_id(conn, ContentKind.PLOT, conv["plot_id"])
     if not plot:
         raise NotFound("conversation plot missing")
-    char = conn.execute(f"SELECT {select_cols('characters')} FROM characters WHERE id=?", (plot["character_id"],)).fetchone()
+    char: dict | None = find_content_by_id(conn, ContentKind.CHARACTER, plot["character_id"])
     if not char:
         raise NotFound("plot character missing")
-    user = conn.execute(f"SELECT {select_cols('user_profiles')} FROM user_profiles WHERE id=?", (plot["user_profile_id"],)).fetchone()
+    user: dict | None = find_content_by_id(conn, ContentKind.USER_PROFILE, plot["user_profile_id"])
     if not user:
         raise NotFound("plot user_profile missing")
     return conv, plot, char, user
 
 
-def merged_preferences(conn, plot, conversation_id):
-    plot_data = row_json(plot, "plot_json")
-    genres = plot_data.get("genre") or []
-    if isinstance(genres, str):
-        genres = [genres]
-    rows = conn.execute(f"SELECT {select_cols('preference_profiles')} FROM preference_profiles").fetchall()
-    chosen = []
-    rank = {"global": 0, "genre": 1, "character": 2, "plot": 3, "conversation": 4}
-    for row in rows:
+def merged_preferences(conn: sqlite3.Connection, plot: dict, conversation_id: str) -> tuple[dict, list]:
+    plot_data: PlotData = parse_content_data(ContentKind.PLOT, row_json(plot, "plot_json"))
+    genres: list[str] = plot_data.genre
+    pref_rows: list[sqlite3.Row] = fetch_all(conn, f"SELECT {select_cols('preference_profiles')} FROM preference_profiles")
+    chosen: list[tuple] = []
+    rank: dict = {"global": 0, "genre": 1, "character": 2, "plot": 3, "conversation": 4}
+    for row in pref_rows:
         scope, sid = row["scope"], row["scope_id"]
         if scope == "global" or (scope == "genre" and sid in genres) or (scope == "character" and sid == plot["character_id"]) or (scope == "plot" and sid == plot["id"]) or (scope == "conversation" and sid == conversation_id):
-            chosen.append((rank.get(scope, -1), row_json(row, "profile_json"), row["source_text"]))
-    merged = {"preferredNotes": [], "dislikedPatterns": [], "generationRules": [], "inputMarkup": []}
-    pref_ooc = []
-    for _, payload, _ in sorted(chosen):
-        profile = payload.get("profile", payload)
+            chosen.append((rank.get(scope, -1), parse_content_data(ContentKind.PREFERENCE, row_json(row, "profile_json")), row["source_text"]))
+    merged: dict = {"preferredNotes": [], "dislikedPatterns": [], "generationRules": [], "inputMarkup": []}
+    pref_ooc: list = []
+    for _, payload, _ in sorted(chosen, key=lambda item: item[0]):
+        profile: dict = payload.profile
         for key, value in profile.items():
             if key in ("preferredNotes", "dislikedPatterns", "generationRules", "inputMarkup") and isinstance(value, list):
                 merged.setdefault(key, []).extend(value)
             elif key not in ("id", "type", "scope", "scopeId", "sourceText"):
                 merged[key] = value
-        if isinstance(payload.get("ooc"), list):
-            pref_ooc.extend(payload["ooc"])
+        pref_ooc.extend(payload.ooc)
     return merged, pref_ooc
 
 
-def build_prompt(conn, conversation_id, user_message):
+def build_prompt(conn: sqlite3.Connection, conversation_id: str, user_message: str) -> BuiltPrompt:
     _, plot, char, user = resolve_prompt_context(conn, conversation_id)
-    char_data, user_data, plot_data = row_json(char, "profile_json"), row_json(user, "profile_json"), row_json(plot, "plot_json")
-    ctx = {
-        "char": char_data.get("displayName") or char_data.get("name") or char["id"],
-        "user": user_data.get("displayName") or user_data.get("name") or user["id"],
-        "plot": plot_data.get("title") or plot["id"],
+    char_json: dict = row_json(char, "profile_json")
+    user_json: dict = row_json(user, "profile_json")
+    plot_json: dict = row_json(plot, "plot_json")
+    char_data: CharacterData = parse_content_data(ContentKind.CHARACTER, char_json)
+    user_data: UserProfileData = parse_content_data(ContentKind.USER_PROFILE, user_json)
+    plot_data: PlotData = parse_content_data(ContentKind.PLOT, plot_json)
+    ctx: dict = {
+        "char": char_data.displayName or char_data.name or char["id"],
+        "user": user_data.displayName or user_data.name or user["id"],
+        "plot": plot_data.title or plot["id"],
     }
-    warnings = []
+    warnings: list = []
     pref, pref_ooc = merged_preferences(conn, plot, conversation_id)
-    parts = []
-    ooc = []
+    parts: list[tuple[str, str]] = []
+    ooc: list[str] = []
     for title, payload, source in [
-        ("캐릭터 프로필", char_data, char["source_text"]),
-        ("사용자 프로필", user_data, user["source_text"]),
-        ("플롯 프로필", plot_data, plot["source_text"]),
+        ("캐릭터 프로필", char_json, char["source_text"]),
+        ("사용자 프로필", user_json, user["source_text"]),
+        ("플롯 프로필", plot_json, plot["source_text"]),
     ]:
-        rendered = render_value(source_for(payload, source), ctx, warnings)
+        rendered: str = render_value(source_for(payload, source), ctx, warnings)
         body, found_ooc = split_ooc(rendered)
         parts.append((title, body))
         ooc.extend(found_ooc)
-    recent = conn.execute(
+    recent: list[sqlite3.Row] = fetch_all(
+        conn,
         "SELECT role, content FROM messages WHERE conversation_id=? ORDER BY created_at DESC LIMIT 12",
         (conversation_id,),
-    ).fetchall()
-    recent_text = "\n".join(f"{r['role']}: {r['content']}" for r in reversed(recent))
-    generation_rules = [
+    )
+    recent_text: str = "\n".join(f"{r['role']}: {r['content']}" for r in reversed(recent))
+    generation_rules: list[str] = [
         *[render_value(r, ctx, warnings) for r in pref.get("generationRules", [])],
         *[f"선호: {render_value(n, ctx, warnings)}" for n in pref.get("preferredNotes", [])],
         *[f"금지: {render_value(p, ctx, warnings)}" for p in pref.get("dislikedPatterns", [])],
         *ooc,
         *[render_value(o, ctx, warnings) for o in pref_ooc],
     ]
-    input_markup = [render_value(m, ctx, warnings) for m in pref.get("inputMarkup", [])]
-    prompt = [
+    input_markup: list[str] = [render_value(m, ctx, warnings) for m in pref.get("inputMarkup", [])]
+    prompt: list[str] = [
         render_value("[역할]\n너는 {{char}}다. {{user}}(사용자)의 메시지에 {{char}}로 응답한다.", ctx, warnings),
         *[f"[{title}]\n{body}" for title, body in parts],
         "[입력 표기]\n" + "\n".join(f"- {line}" for line in input_markup if line),
-        "[현재 입력]\n" + user_input_interpretation(user_message),
+        "[현재 입력]\n" + user_input_interpretation(user_message, ctx),
         "[생성 규칙]\n" + "\n".join(f"- {line}" for line in generation_rules if line),
         "[최근 대화]\n" + recent_text,
         "[사용자 원문]\n" + render_value(user_message, ctx, warnings),
         "RESPOND NOW in Korean only. Do not explain, reason, translate, or plan. Output the roleplay scene directly.",
     ]
-    return "\n\n".join(prompt), warnings, plot, char, user
+    return BuiltPrompt(prompt="\n\n".join(prompt), warnings=warnings, plot=plot, char=char, user=user)

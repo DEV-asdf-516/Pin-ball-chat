@@ -1,10 +1,92 @@
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
 
-from domain.services import GenerationParams
+from domain.generation_params import GenerationParams
 
 
 class CamelModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
+
+
+class ContentBody(CamelModel):
+    """character/user_profile/plot/preference create/update body의 공통 베이스.
+
+    content 파일은 정의 안 된 필드도 그대로 저장하는 라운드트립 계약이 있어서
+    (`write_content_file`이 dict를 통째로 파일에 쓴다), 알려지지 않은 필드를
+    버리지 않도록 `extra="allow"`를 쓴다.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    def to_dict(self) -> dict:
+        return self.model_dump(by_alias=True, exclude_none=True)
+
+
+class CharacterCreateRequest(ContentBody):
+    id: str
+    type: str = "character"
+    source_text: str = Field(alias="sourceText")
+    name: str | None = None
+    display_name: str | None = Field(default=None, alias="displayName")
+
+
+class CharacterUpdateRequest(ContentBody):
+    type: str = "character"
+    source_text: str = Field(alias="sourceText")
+    name: str | None = None
+    display_name: str | None = Field(default=None, alias="displayName")
+
+
+class UserProfileCreateRequest(ContentBody):
+    id: str
+    type: str = "user_profile"
+    source_text: str = Field(alias="sourceText")
+    name: str | None = None
+    display_name: str | None = Field(default=None, alias="displayName")
+
+
+class UserProfileUpdateRequest(ContentBody):
+    type: str = "user_profile"
+    source_text: str = Field(alias="sourceText")
+    name: str | None = None
+    display_name: str | None = Field(default=None, alias="displayName")
+
+
+class PlotCreateRequest(ContentBody):
+    id: str
+    type: str = "plot"
+    character_id: str = Field(alias="characterId")
+    user_profile_id: str = Field(alias="userProfileId")
+    source_text: str = Field(alias="sourceText")
+    title: str | None = None
+    genre: list[str] = Field(default_factory=list)
+
+
+class PlotUpdateRequest(ContentBody):
+    type: str = "plot"
+    character_id: str = Field(alias="characterId")
+    user_profile_id: str = Field(alias="userProfileId")
+    source_text: str = Field(alias="sourceText")
+    title: str | None = None
+    genre: list[str] = Field(default_factory=list)
+
+
+class PreferenceCreateRequest(ContentBody):
+    id: str
+    type: str = "preference"
+    profile: dict[str, Any]
+    scope: str = "global"
+    scope_id: str | None = Field(default=None, alias="scopeId")
+    ooc: list[str] = Field(default_factory=list)
+
+
+class PreferenceUpdateRequest(ContentBody):
+    type: str = "preference"
+    profile: dict[str, Any]
+    scope: str = "global"
+    scope_id: str | None = Field(default=None, alias="scopeId")
+    ooc: list[str] = Field(default_factory=list)
 
 
 class GenerationParamsRequest(CamelModel):

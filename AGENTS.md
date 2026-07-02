@@ -117,19 +117,29 @@ low-level infrastructure를 담당한다.
 파일 기반 콘텐츠 import는 다음 기준을 따른다.
 ```text
 domain/
-  content_importer.py
-  content_upsert.py
+  content/
+    specs.py
+    importer.py
+    reader.py
+    writer.py
+  characters.py
+  user_profiles.py
+  plots.py
 util/
   frontmatter.py
-  content_file.py
+  content_file_util.py
   time_util.py
 ```
-- `content_importer.py`: import 흐름, type 검증, 참조 검증, error 수집
-- `content_upsert.py`: table whitelist, JSON 직렬화, DB upsert
-- `frontmatter.py`: Markdown frontmatter parser
-- `content_file.py`: 파일 하나를 읽어 표준 tuple로 변환
+- `specs.py`: `ContentKind` enum, dirname/table/kind/columns 매핑 (`CONTENT_SPECS`, `KIND_DIR`, `KIND_TABLE`, `TABLE_COLUMNS`), `ContentPayload` 및 하위 dataclass, `parse_content_data` — 콘텐츠 스키마의 단일 소스
+- `reader.py`: 조회 전용 (`find_content_by_id`, `content_exists`, `find_all_content`) — `core.db`의 `find_by_id`/`exists`/`find_all`을 `KIND_TABLE` 기준으로 감싼다
+- `writer.py`: 콘텐츠 항목 쓰기 전담. `upsert_content_item`(단일 항목 DB upsert, `importer.py`와 공유하는 저수준 프리미티브)과 `create_content_item`/`update_content_item`/`delete_content_item`(파일 쓰기 + DB upsert, id/참조 검증)을 모두 포함한다
+- `importer.py`: 대량 import 흐름, type 검증, 참조 검증, error 수집 — 실제 upsert는 `writer.py`의 `upsert_content_item`에 위임
+- `domain/characters.py`, `domain/user_profiles.py`, `domain/plots.py`: 각 리소스의 단건 조회(`get_character`/`get_user_profile`/`get_plot`, 없으면 `NotFound`) — 실제 사용처(해당 `server/routes/*.py`)와 1:1로 대응하는 도메인 파일
+- `frontmatter.py`: Markdown frontmatter parser/renderer
+- `content_file_util.py`: 파일 하나를 읽고/쓰며 표준 tuple로 변환
 - `time_util.py`: 범용 시간 helper
 - DB table/column을 아는 코드는 `util/`에 두지 않는다.
+- `kind` 값은 문자열 하드코딩 대신 `domain.content.specs.ContentKind`를 쓴다.
 
 ## 콘텐츠 파일 포맷 계약
 
