@@ -39,7 +39,10 @@ def new_id(prefix: str) -> str:
 def connect(db_path: str | Path = DB_PATH) -> sqlite3.Connection:
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn: sqlite3.Connection = sqlite3.connect(db_path)
+    # async 라우트 핸들러는 event loop 스레드에서 실행되지만, 이 connection은
+    # FastAPI가 sync dependency(get_db_conn)를 위해 별도로 띄운 threadpool 스레드에서 생성된다.
+    # 요청 하나당 connection 하나를 순차적으로만 쓰므로(진짜 동시 접근 없음) check_same_thread=False로 안전하다.
+    conn: sqlite3.Connection = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -74,3 +77,8 @@ def find_all(conn: sqlite3.Connection, table: str) -> list[dict]:
 
 def exists(conn: sqlite3.Connection, table: str, column: str, value) -> bool:
     return bool(fetch_one(conn, f"SELECT 1 FROM {table} WHERE {column}=?", (value,)))
+
+
+def insert(conn: sqlite3.Connection, table: str, columns: tuple[str, ...], values: tuple) -> None:
+    placeholders: str = ",".join("?" for _ in values)
+    conn.execute(f"INSERT INTO {table} ({join_columns(columns)}) VALUES ({placeholders})", values)

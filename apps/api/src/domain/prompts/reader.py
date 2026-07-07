@@ -7,6 +7,7 @@ from core.db import fetch_all, find_by_id, select_cols
 from core.errors import NotFound
 from domain.content.reader import find_content_by_id
 from domain.content.specs import CharacterData, ContentKind, PlotData, UserProfileData, parse_content_data
+from util.dict_util import get_safe_list
 from util.string_util import strip_from
 
 
@@ -171,13 +172,13 @@ def build_prompt(conn: sqlite3.Connection, conversation_id: str, user_message: s
     )
     recent_text: str = "\n".join(f"{r['role']}: {r['content']}" for r in reversed(recent))
     generation_rules: list[str] = [
-        *[render_value(r, ctx, warnings) for r in pref.get("generationRules", [])],
-        *[f"선호: {render_value(n, ctx, warnings)}" for n in pref.get("preferredNotes", [])],
-        *[f"금지: {render_value(p, ctx, warnings)}" for p in pref.get("dislikedPatterns", [])],
+        *[render_value(r, ctx, warnings) for r in get_safe_list(pref, "generationRules")],
+        *[f"선호: {render_value(n, ctx, warnings)}" for n in get_safe_list(pref, "preferredNotes")],
+        *[f"금지: {render_value(p, ctx, warnings)}" for p in get_safe_list(pref, "dislikedPatterns")],
         *ooc,
         *[render_value(o, ctx, warnings) for o in pref_ooc],
     ]
-    input_markup: list[str] = [render_value(m, ctx, warnings) for m in pref.get("inputMarkup", [])]
+    input_markup: list[str] = [render_value(m, ctx, warnings) for m in get_safe_list(pref, "inputMarkup")]
     prompt: list[str] = [
         render_value("[역할]\n너는 {{char}}다. {{user}}(사용자)의 메시지에 {{char}}로 응답한다.", ctx, warnings),
         *[f"[{title}]\n{body}" for title, body in parts],

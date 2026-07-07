@@ -1,130 +1,130 @@
 import json
-import logging
 import os
-import socket
 from dataclasses import replace
-from urllib import error, request
+from typing import AsyncIterator
 
-log = logging.getLogger(__name__)
+import httpx
 
-from ai.constant import DEFAULT_NUM_CTX, DEFAULT_NUM_PREDICT, OLLAMA_KEEP_ALIVE, OLLAMA_OPTIONS, OLLAMA_TIMEOUT
-from ai.errors import EmptyOutputError, OllamaBadGatewayError, OllamaTimeoutError
-from ai.provider import GenerateRequest
-from ai.providers.stub import LocalStubProvider
+from ai.settings import DEFAULT_NUM_CTX, DEFAULT_NUM_PREDICT, OLLAMA_KEEP_ALIVE, OLLAMA_OPTIONS, OLLAMA_TIMEOUT
+from ai.errors import EmptyOutputError
+from ai.transport.http_client import HttpClient
+from ai.transport.http_errors import translate_http_errors
+from ai.model import GenerateRequest, GenerateResponse
+from ai.providers.base import AIProvider
+from util.dict_util import get_safe_dict
 
 
 def is_qwen3_model(model: str) -> bool:
     return model.lower().startswith("qwen3")
 
 
-def ollama_payload(model, prompt, user_message, stream, num_predict=None, num_ctx=None):
-    options = {**OLLAMA_OPTIONS, "num_predict": num_predict or DEFAULT_NUM_PREDICT, "num_ctx": num_ctx or DEFAULT_NUM_CTX}
-    payload = {
-        "model": model,
-        "stream": stream,
+def _is_bad_gateway(exc: httpx.HTTPStatusError, body: str) -> bool:
+    return exc.response.status_code in (400, 404) or "model" in body.lower()
+
+
+def _is_qwen3_response_empty(model: str, has_content) -> bool:
+    return is_qwen3_model(model) and not has_content
+
+
+def _base_url() -> str:
+    base_url: str | None = os.environ.get("OLLAMA_BASE_URL")
+    if not base_url:
+        raise ValueError("OLLAMA_BASE_URL is missing")
+    return base_url
+
+
+def to_ollama_payload(req: GenerateRequest) -> dict:
+    options: dict = {
+        **OLLAMA_OPTIONS,
+        "num_predict": req.num_predict or DEFAULT_NUM_PREDICT,
+        "num_ctx": req.num_ctx or DEFAULT_NUM_CTX,
+    }
+
+    payload: dict = {
+        "model": req.model,
+        "stream": req.stream,
         "keep_alive": OLLAMA_KEEP_ALIVE,
         "options": options,
         "messages": [
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": user_message},
+            {"role": "system", "content": req.prompt},
+            {"role": "user", "content": req.user_message},
         ],
     }
-    if is_qwen3_model(model):
+
+    if is_qwen3_model(req.model):
         payload["think"] = False
+
     return payload
 
 
-class OllamaProvider:
+class OllamaProvider(AIProvider):
     name = "ollama"
-    _instance = None
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
+    async def generate(self, req: GenerateRequest) -> GenerateResponse:
+        return await self._generate_internal(req, retried=False)
 
-    def generate(self, req: GenerateRequest, retried=False):
-        base_url = os.environ.get("OLLAMA_BASE_URL")
+    async def _generate_internal(self, req: GenerateRequest, retried: bool) -> GenerateResponse:
+        payload: dict = to_ollama_payload(req)
+        url: str = _base_url().rstrip("/") + "/api/chat"
+        client: httpx.AsyncClient = HttpClient().get()
 
-        if not base_url:
-            text, _ = LocalStubProvider().generate(req)
-            return text, {"provider": "local-stub", "fallbackApplied": True}
+        async with translate_http_errors("ollama", _is_bad_gateway):
+            res: httpx.Response = await client.post(url, json=payload, timeout=OLLAMA_TIMEOUT)
+            res.raise_for_status()
+            body: dict = res.json()
 
-        payload = ollama_payload(req.model, req.prompt, req.user_message, False, req.num_predict, req.num_ctx)
-        log.debug("→ ollama generate | model=%s think=%s num_predict=%s\n[PROMPT]\n%s\n[USER]\n%s",
-                  req.model, payload.get("think"), payload["options"].get("num_predict"),
-                  req.prompt, req.user_message)
+        content: str = get_safe_dict(body, "message").get("content") or body.get("response") or ""
 
-        http_req = request.Request(
-            base_url.rstrip("/") + "/api/chat",
-            data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-
-        try:
-            with request.urlopen(http_req, timeout=OLLAMA_TIMEOUT) as res:
-                body = json.loads(res.read())
-        except (TimeoutError, socket.timeout) as exc:
-            raise OllamaTimeoutError("ollama request timed out") from exc
-        except error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
-            if exc.code in (400, 404) or "model" in body.lower():
-                raise OllamaBadGatewayError(f"ollama returned {exc.code}: {body}") from exc
-            raise
-
-        content = body.get("message", {}).get("content") or body.get("response") or ""
-        log.debug("← ollama generate | content_len=%d retried=%s\n[RAW_CONTENT]\n%s", len(content), retried, content[:400])
-
-        if not content and is_qwen3_model(req.model) and not retried:
-            fallback_tokens = max(req.num_predict or DEFAULT_NUM_PREDICT, 256)
-            text, meta = self.generate(replace(req, num_predict=fallback_tokens), True)
-            meta["fallbackApplied"] = True
-            return text, meta
-
-        if not content and is_qwen3_model(req.model):
+        if _is_qwen3_response_empty(req.model, content):
+            if not retried:
+                fallback_tokens: int = max(req.num_predict or DEFAULT_NUM_PREDICT, 256)
+                retried_response: GenerateResponse = await self._generate_internal(replace(req, num_predict=fallback_tokens), True)
+                return replace(retried_response, fallback_applied=True)
             raise EmptyOutputError("qwen3 produced no content with think:false")
 
         if not content:
-            text, _ = LocalStubProvider().generate(req)
-            return text, {"provider": self.name, "fallbackApplied": retried}
-        return content, {"provider": self.name, "fallbackApplied": retried}
+            raise EmptyOutputError("ollama produced no content")
 
-    def stream(self, req: GenerateRequest, retried=False):
-        base_url = os.environ.get("OLLAMA_BASE_URL")
-        if not base_url:
-            yield from LocalStubProvider().stream(req)
-            return
-        payload = ollama_payload(req.model, req.prompt, req.user_message, True, req.num_predict, req.num_ctx)
-        http_req = request.Request(
-            base_url.rstrip("/") + "/api/chat",
-            data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with request.urlopen(http_req, timeout=OLLAMA_TIMEOUT) as res:
-                emitted_content = False
-                for raw in res:
-                    if not raw.strip():
-                        continue
-                    chunk = json.loads(raw)
-                    content = chunk.get("message", {}).get("content")
-                    if content:
-                        emitted_content = True
-                        yield content
-                    if chunk.get("done"):
-                        if is_qwen3_model(req.model) and not emitted_content and not retried:
-                            fallback_tokens = max(req.num_predict or DEFAULT_NUM_PREDICT, 256)
-                            yield from self.stream(replace(req, num_predict=fallback_tokens), True)
-                            return
-                        if is_qwen3_model(req.model) and not emitted_content:
-                            raise EmptyOutputError("qwen3 produced no content with think:false")
+        return GenerateResponse(text=content, provider=self.name, fallback_applied=retried)
+
+    async def stream(self, req: GenerateRequest) -> AsyncIterator[str]:
+        async for token in self._stream_internal(req, retried=False):
+            yield token
+
+    async def _stream_internal(self, req: GenerateRequest, retried: bool) -> AsyncIterator[str]:
+        payload: dict = to_ollama_payload(req)
+        url: str = _base_url().rstrip("/") + "/api/chat"
+        client: httpx.AsyncClient = HttpClient().get()
+
+        async with (
+            translate_http_errors("ollama", _is_bad_gateway),
+            client.stream("POST", url, json=payload, timeout=OLLAMA_TIMEOUT) as res,
+        ):
+            res: httpx.Response
+            res.raise_for_status()
+            emitted_content: bool = False
+            async for line in res.aiter_lines():
+                if not line.strip():
+                    continue
+                
+                chunk: dict = json.loads(line)
+                content: str | None = get_safe_dict(chunk, "message").get("content")
+                
+                if content:
+                    emitted_content = True
+                    yield content
+                
+                if not chunk.get("done"):
+                    continue
+                
+                if _is_qwen3_response_empty(req.model, emitted_content):
+                    if not retried:
+                        fallback_tokens: int = max(req.num_predict or DEFAULT_NUM_PREDICT, 256)
+                        async for token in self._stream_internal(replace(req, num_predict=fallback_tokens), True):
+                            yield token
                         return
-        except (TimeoutError, socket.timeout) as exc:
-            raise OllamaTimeoutError("ollama stream timed out") from exc
-        except error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
-            if exc.code in (400, 404) or "model" in body.lower():
-                raise OllamaBadGatewayError(f"ollama returned {exc.code}: {body}") from exc
-            raise
+                    raise EmptyOutputError("qwen3 produced no content with think:false")
+
+                if not emitted_content:
+                    raise EmptyOutputError("ollama produced no content")
+                return

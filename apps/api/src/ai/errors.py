@@ -1,8 +1,8 @@
-class OllamaTimeoutError(Exception):
+class ProviderTimeoutError(Exception):
     pass
 
 
-class OllamaBadGatewayError(Exception):
+class ProviderBadGatewayError(Exception):
     pass
 
 

@@ -1,13 +1,14 @@
 import json
 import logging
-from typing import Iterator
+from typing import AsyncIterator
 
-from ai.errors import EmptyOutputError, OllamaBadGatewayError, OllamaTimeoutError
+from ai.errors import EmptyOutputError, ProviderBadGatewayError, ProviderTimeoutError
+from ai.model import GenerateRequest
 from ai.registry import stream_text
 from core.db import connect, init_db
 from domain.generation_params import GenerationParams
-from domain.generations import insert_user_turn, mark_regenerated, save_generation_output
-from domain.prompts import BuiltPrompt
+from domain.generations.writer import insert_user_turn, mark_regenerated, save_generation_output
+from domain.prompts.reader import BuiltPrompt
 
 log = logging.getLogger(__name__)
 
@@ -16,12 +17,21 @@ def sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-def stream_response(prepared: dict, params: GenerationParams) -> Iterator[str]:
+async def stream_response(prepared: dict, params: GenerationParams) -> AsyncIterator[str]:
     full_text: list[str] = []
     built: BuiltPrompt = prepared["built"]
+    req = GenerateRequest(
+        prompt=built.prompt,
+        user_message=prepared["userMessage"],
+        model=params.model,
+        candidate_index=0,
+        num_predict=params.num_predict,
+        num_ctx=params.num_ctx,
+        stream=True,
+    )
     try:
         yield sse("start", {"conversationId": prepared["conversationId"], "turnId": prepared["turnId"]})
-        for token in stream_text(built.prompt, prepared["userMessage"], params.model, 0, params.num_predict, params.num_ctx, params.provider_name):
+        async for token in stream_text(req, params.provider_name):
             full_text.append(token)
             yield sse("token", {"content": token})
         output: str = "".join(full_text)
@@ -37,10 +47,10 @@ def stream_response(prepared: dict, params: GenerationParams) -> Iterator[str]:
                 prepared["conversationId"],
                 built,
                 params,
+                req,
                 output,
                 prepared["actionType"],
                 None,
-                True,
             )
         yield sse("done", {
             "conversationId": prepared["conversationId"],
@@ -50,12 +60,12 @@ def stream_response(prepared: dict, params: GenerationParams) -> Iterator[str]:
         })
     except GeneratorExit:
         log.info("stream aborted: turn_id=%s", prepared["turnId"])
-    except OllamaTimeoutError as exc:
-        log.exception("ollama timeout during stream")
-        yield sse("error", {"error": "ollama_timeout", "message": str(exc)})
-    except OllamaBadGatewayError as exc:
-        log.exception("ollama bad gateway during stream")
-        yield sse("error", {"error": "ollama_bad_gateway", "message": str(exc)})
+    except ProviderTimeoutError as exc:
+        log.exception("provider timeout during stream")
+        yield sse("error", {"error": "provider_timeout", "message": str(exc)})
+    except ProviderBadGatewayError as exc:
+        log.exception("provider bad gateway during stream")
+        yield sse("error", {"error": "provider_bad_gateway", "message": str(exc)})
     except EmptyOutputError as exc:
         yield sse("error", {"error": "empty_output", "message": str(exc)})
     except Exception as exc:

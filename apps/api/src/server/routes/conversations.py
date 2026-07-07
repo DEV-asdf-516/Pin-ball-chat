@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
-from domain.conversations import create_conversation, get_conversation, get_conversation_settings, list_messages, save_conversation_settings
+from domain.conversations.reader import get_conversation, get_conversation_settings, list_messages
+from domain.conversations.writer import create_conversation, save_conversation_settings
 from server.dependencies import DbConn
 from server.schemas import ConversationResponse, CreateConversationRequest, GenerationParamsRequest
 

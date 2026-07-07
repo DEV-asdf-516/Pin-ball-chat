@@ -50,6 +50,7 @@ def parse_frontmatter(text: str) -> tuple[dict, str]:
         
         current = key.strip()
         value = value.strip()
+        
         meta[current] = [] if value == "" else value
     
     return meta, strip_from(text, end + len(_CLOSE) + 1)

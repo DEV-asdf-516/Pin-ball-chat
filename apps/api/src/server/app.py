@@ -3,13 +3,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from ai.transport.http_client import HttpClient
 from core.db import ROOT, connect, init_db
 from domain.content.importer import import_content_catalog
 from server.errors import register_error_handlers
 from server.router import register_routes
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
-logging.getLogger("ai.providers.ollama").setLevel(logging.DEBUG)
 
 log = logging.getLogger(__name__)
 
@@ -22,6 +22,7 @@ async def lifespan(_app: FastAPI):
         if errors:
             log.warning("content load errors:\n%s", "\n".join(errors))
     yield
+    await HttpClient().close()
 
 
 def create_app():

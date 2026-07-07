@@ -4,10 +4,27 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from ai.errors import EmptyOutputError, OllamaBadGatewayError, OllamaTimeoutError
+from ai.errors import EmptyOutputError, ProviderBadGatewayError, ProviderTimeoutError
 from core.errors import BadRequest, NotFound
 
 log = logging.getLogger(__name__)
+
+# exception -> (HTTP status, 응답 error 코드). str(exc)를 message로 그대로 반환하는,
+# 서로 매핑만 다르고 몸통이 동일한 에러들은 여기 한 줄만 추가하면 등록된다.
+_SIMPLE_ERRORS: dict[type[Exception], tuple[int, str]] = {
+    NotFound: (404, "not_found"),
+    BadRequest: (400, "bad_request"),
+    ValueError: (400, "bad_request"),
+    ProviderTimeoutError: (504, "provider_timeout"),
+    ProviderBadGatewayError: (502, "provider_bad_gateway"),
+    EmptyOutputError: (502, "empty_output"),
+}
+
+
+def _simple_handler(status_code: int, error_code: str):
+    async def handler(_request: Request, exc: Exception):
+        return JSONResponse(status_code=status_code, content={"error": error_code, "message": str(exc)})
+    return handler
 
 
 def register_error_handlers(app: FastAPI):
@@ -20,29 +37,8 @@ def register_error_handlers(app: FastAPI):
     async def validation_error(_request: Request, exc: RequestValidationError):
         return JSONResponse(status_code=422, content={"error": "validation_error", "message": "request validation failed", "details": exc.errors()})
 
-    @app.exception_handler(NotFound)
-    async def not_found_error(_request: Request, exc: NotFound):
-        return JSONResponse(status_code=404, content={"error": "not_found", "message": str(exc)})
-
-    @app.exception_handler(BadRequest)
-    async def bad_request_error(_request: Request, exc: BadRequest):
-        return JSONResponse(status_code=400, content={"error": "bad_request", "message": str(exc)})
-
-    @app.exception_handler(ValueError)
-    async def value_error(_request: Request, exc: ValueError):
-        return JSONResponse(status_code=400, content={"error": "bad_request", "message": str(exc)})
-
-    @app.exception_handler(OllamaTimeoutError)
-    async def ollama_timeout_error(_request: Request, exc: OllamaTimeoutError):
-        return JSONResponse(status_code=504, content={"error": "ollama_timeout", "message": str(exc)})
-
-    @app.exception_handler(OllamaBadGatewayError)
-    async def ollama_bad_gateway_error(_request: Request, exc: OllamaBadGatewayError):
-        return JSONResponse(status_code=502, content={"error": "ollama_bad_gateway", "message": str(exc)})
-
-    @app.exception_handler(EmptyOutputError)
-    async def empty_output_error(_request: Request, exc: EmptyOutputError):
-        return JSONResponse(status_code=502, content={"error": "empty_output", "message": str(exc)})
+    for exc_type, (status_code, error_code) in _SIMPLE_ERRORS.items():
+        app.add_exception_handler(exc_type, _simple_handler(status_code, error_code))
 
     @app.exception_handler(Exception)
     async def unexpected_error(_request: Request, exc: Exception):

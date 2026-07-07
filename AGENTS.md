@@ -30,6 +30,7 @@ src/
   core/
   util/
 ```
+`domain/`이 복잡해지면 하위 폴더로 쪼개되, `reader.py`(조회)/`writer.py`(쓰기) 컨벤션을 따르고 필요한 파일만 둔다. 폴더로 감쌀 만큼 복잡하지 않은 단순 도메인은 flat 파일로 둔다.
 
 ## 계층 책임
 
@@ -60,7 +61,14 @@ HTTP 계층이다.
 - request/response schema 의존
 
 ### `ai/`
-AI provider 연동만 담당한다.
+AI provider 연동만 담당한다. 전부 async (httpx 기반) — provider 호출부는 실제 네트워크 I/O를 기다려야 해서 예외적으로 async 전환됨.
+```text
+ai/
+  transport/   # HTTP 저수준 유틸 (공유 클라이언트, 에러 변환, SSE 파싱)
+  providers/   # base.py(AIProvider 추상 계약) + provider별 구현
+```
+- 새 provider를 추가할 땐 `AIProvider`를 상속하고 `name`/`generate()`/`stream()`만 구현한다.
+- 여러 `async with`가 겹칠 땐 중첩하지 말고 괄호로 묶은 단일 `async with (...)`로 flat하게 쓴다 (Python 3.10+).
 금지:
 - DB write
 - HTTP response 생성

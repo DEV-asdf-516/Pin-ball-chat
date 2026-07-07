@@ -9,3 +9,11 @@ class GenerateRequest:
     candidate_index: int
     num_predict: int | None = None
     num_ctx: int | None = None
+    stream: bool = False
+
+
+@dataclass
+class GenerateResponse:
+    text: str
+    provider: str
+    fallback_applied: bool = False

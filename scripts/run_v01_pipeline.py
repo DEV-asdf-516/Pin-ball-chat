@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import sys
@@ -13,12 +14,12 @@ os.environ["DB_PATH"] = str(Path(_tmp.name) / "pinballchat.sqlite")
 
 from core.db import connect, init_db
 from domain.content.importer import import_content_catalog
-from domain.conversations import create_conversation
+from domain.conversations.writer import create_conversation
 from domain.generation_params import GenerationParams
-from domain.generations import chat, edit_generation, regenerate, select_generation
+from domain.generations.writer import chat, edit_generation, regenerate, select_generation
 
 
-def main():
+async def main():
     with connect() as conn:
         init_db(conn)
         errors = import_content_catalog(conn, ROOT / "examples")
@@ -26,8 +27,8 @@ def main():
             raise SystemExit("\n".join(errors))
         conv = create_conversation(conn, "first_meeting", "v0.1 smoke")
         params = GenerationParams()
-        first = chat(conn, conv["conversationId"], "문 앞에 섰어.", params)
-        second = regenerate(conn, first["turnId"], params)
+        first = await chat(conn, conv["conversationId"], "문 앞에 섰어.", params)
+        second = await regenerate(conn, first["turnId"], params)
         select_generation(conn, second["generationId"])
         edit_generation(conn, second["generationId"], "문은 열려 있어. 네가 원하면, 나는 여기서 기다릴게.")
         prompt = conn.execute("SELECT prompt_snapshot FROM generations WHERE id=?", (second["generationId"],)).fetchone()[0]
@@ -55,4 +56,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
