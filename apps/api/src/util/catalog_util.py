@@ -6,28 +6,28 @@ from util.frontmatter import parse_frontmatter, render_frontmatter
 
 
 @dataclass(frozen=True)
-class LoadedContent:
+class LoadedCatalog:
     data: dict
     source_text: str
     source_format: str
 
 
-def load_content_file(path: Path) -> LoadedContent:
+def load_catalog_file(path: Path) -> LoadedCatalog:
     text: str = path.read_text(encoding="utf-8")
 
     if path.suffix == ".json":
         data: dict = json.loads(text)
-        return LoadedContent(data=data, source_text=text, source_format="json")
+        return LoadedCatalog(data=data, source_text=text, source_format="json")
 
     meta, body = parse_frontmatter(text)
 
     data: dict = dict(meta)
     data["sourceText"] = body
 
-    return LoadedContent(data=data, source_text=body, source_format="md")
+    return LoadedCatalog(data=data, source_text=body, source_format="md")
 
 
-def write_content_file(path: Path, data: dict, source_format: str) -> str:
+def write_catalog_file(path: Path, data: dict, source_format: str) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
 
     if source_format == "json":

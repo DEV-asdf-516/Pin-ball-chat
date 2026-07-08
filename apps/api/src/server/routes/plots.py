@@ -1,35 +1,35 @@
 from fastapi import APIRouter
 
-from domain.content.reader import find_all_content
-from domain.content.specs import ContentKind
+from domain.catalog.reader import find_all_by_kind
+from domain.catalog.specs import CatalogKind
 from domain.plots import get_plot
-from domain.content.writer import create_content_item, delete_content_item, update_content_item
+from domain.catalog.writer import create_catalog_item, delete_catalog_item, update_catalog_item
 from server.dependencies import DbConn
-from server.schemas import PlotCreateRequest, PlotUpdateRequest
+from server.specs import CatalogDeleteResponse, PlotCreateRequest, PlotResponse, PlotUpdateRequest
 
 router = APIRouter()
 
 
-@router.get("/api/plots")
+@router.get("/api/plots", response_model=list[PlotResponse])
 def get_plots(conn: DbConn):
-    return find_all_content(conn, ContentKind.PLOT)
+    return find_all_by_kind(conn, CatalogKind.PLOT)
 
 
-@router.get("/api/plots/{plot_id}")
+@router.get("/api/plots/{plot_id}", response_model=PlotResponse)
 def get_plot_route(plot_id: str, conn: DbConn):
     return get_plot(conn, plot_id)
 
 
-@router.post("/api/plots")
+@router.post("/api/plots", response_model=PlotResponse)
 def post_plot(conn: DbConn, body: PlotCreateRequest):
-    return create_content_item(conn, ContentKind.PLOT, body.to_dict())
+    return create_catalog_item(conn, CatalogKind.PLOT, body.to_dict())
 
 
-@router.put("/api/plots/{plot_id}")
+@router.put("/api/plots/{plot_id}", response_model=PlotResponse)
 def put_plot(plot_id: str, conn: DbConn, body: PlotUpdateRequest):
-    return update_content_item(conn, ContentKind.PLOT, plot_id, body.to_dict())
+    return update_catalog_item(conn, CatalogKind.PLOT, plot_id, body.to_dict())
 
 
-@router.delete("/api/plots/{plot_id}")
+@router.delete("/api/plots/{plot_id}", response_model=CatalogDeleteResponse)
 def delete_plot(plot_id: str, conn: DbConn):
-    return delete_content_item(conn, ContentKind.PLOT, plot_id)
+    return delete_catalog_item(conn, CatalogKind.PLOT, plot_id)

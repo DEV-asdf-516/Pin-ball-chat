@@ -1,5 +1,5 @@
 from ai.settings import DEFAULT_AI_PROVIDER, DEFAULT_NUM_CTX, DEFAULT_NUM_PREDICT
-from ai.model import GenerateRequest
+from ai.specs import GenerateRequest
 from ai.providers.base import AIProvider
 from ai.providers.anthropic import AnthropicProvider
 from ai.providers.gemini import GeminiProvider

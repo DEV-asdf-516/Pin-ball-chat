@@ -8,10 +8,10 @@ from ai.settings import DEFAULT_NUM_PREDICT, GEMINI_BASE_URL, GEMINI_TEMPERATURE
 from ai.errors import EmptyOutputError, ProviderBadGatewayError
 from ai.transport.http_client import HttpClient
 from ai.transport.http_errors import translate_http_errors
-from ai.model import GenerateRequest, GenerateResponse
+from ai.specs import GenerateRequest
 from ai.providers.base import AIProvider
 from ai.transport.sse import aiter_sse_events
-from util.dict_util import get_safe_dict, get_safe_list
+from util.safe_util import get_safe_dict, get_safe_list
 
 _OK_FINISH_REASONS = ("STOP", "MAX_TOKENS", "FINISH_REASON_UNSPECIFIED")
 
@@ -25,8 +25,8 @@ def _api_key() -> str:
 
 def to_gemini_payload(req: GenerateRequest) -> dict:
     return {
-        "system_instruction": {"parts": [{"text": req.prompt}]},
-        "contents": [{"role": "user", "parts": [{"text": req.user_message}]}],
+        "system_instruction": {"parts": [{"text": req.system}]},
+        "contents": [{"role": "model" if m.role == "assistant" else m.role, "parts": [{"text": m.content}]} for m in req.messages],
         "generationConfig": {
             "temperature": GEMINI_TEMPERATURE,
             "maxOutputTokens": req.num_predict or DEFAULT_NUM_PREDICT,
@@ -58,18 +58,6 @@ class GeminiProvider(AIProvider):
     def _url(self, req: GenerateRequest, endpoint: str, extra_query: str = "") -> str:
         model_id: str = parse.quote(req.model, safe="")
         return f"{GEMINI_BASE_URL.rstrip('/')}/v1beta/models/{model_id}:{endpoint}?key={parse.quote(_api_key())}{extra_query}"
-
-    async def generate(self, req: GenerateRequest) -> GenerateResponse:
-        client: httpx.AsyncClient = HttpClient().get()
-        async with translate_http_errors(self.name):
-            res: httpx.Response = await client.post(self._url(req, "generateContent"), json=to_gemini_payload(req), timeout=GEMINI_TIMEOUT)
-            res.raise_for_status()
-            body: dict = res.json()
-
-        content: str = _extract_candidate_text(body)
-        if not content:
-            raise EmptyOutputError("gemini produced no content")
-        return GenerateResponse(text=content, provider=self.name)
 
     async def stream(self, req: GenerateRequest) -> AsyncIterator[str]:
         emitted_text: str = ""

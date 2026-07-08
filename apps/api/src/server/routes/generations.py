@@ -1,30 +1,19 @@
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
-from domain.generations.writer import chat, edit_generation, prepare_chat_stream, prepare_regenerate_stream, regenerate, select_generation
-from domain.streaming import stream_response
+from domain.turns.writer import edit_generation, prepare_chat_stream, prepare_regenerate_stream, select_generation
+from domain.turns.streaming import stream_response
 from server.dependencies import DbConn
-from server.schemas import ChatRequest, ChatResponse, EditGenerationRequest, EditResponse, RegenerateRequest, SelectResponse
+from server.specs import ChatRequest, EditGenerationRequest, EditResponse, RegenerateRequest, SelectResponse
 
 
 router = APIRouter()
-
-
-@router.post("/api/chat", response_model=ChatResponse)
-async def post_chat(body: ChatRequest, conn: DbConn):
-    return await chat(conn, body.conversation_id, body.message, body.to_params())
 
 
 @router.post("/api/chat/stream", description="Returns Server-Sent Events. Use curl -N or browser fetch streaming client.")
 def post_chat_stream(body: ChatRequest, conn: DbConn):
     prepared = prepare_chat_stream(conn, body.conversation_id, body.message)
     return StreamingResponse(stream_response(prepared, body.to_params()), media_type="text/event-stream")
-
-
-@router.post("/api/turns/{turn_id}/regenerate", response_model=ChatResponse)
-async def post_regenerate(turn_id: str, conn: DbConn, body: RegenerateRequest | None = None):
-    body = body or RegenerateRequest()
-    return await regenerate(conn, turn_id, body.to_params())
 
 
 @router.post("/api/turns/{turn_id}/regenerate/stream", description="Returns Server-Sent Events. Use curl -N or browser fetch streaming client.")

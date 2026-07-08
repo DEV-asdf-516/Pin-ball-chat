@@ -1,35 +1,35 @@
 from fastapi import APIRouter
 
 from domain.characters import get_character
-from domain.content.reader import find_all_content
-from domain.content.specs import ContentKind
-from domain.content.writer import create_content_item, delete_content_item, update_content_item
+from domain.catalog.reader import find_all_by_kind
+from domain.catalog.specs import CatalogKind
+from domain.catalog.writer import create_catalog_item, delete_catalog_item, update_catalog_item
 from server.dependencies import DbConn
-from server.schemas import CharacterCreateRequest, CharacterUpdateRequest
+from server.specs import CharacterCreateRequest, CharacterResponse, CharacterUpdateRequest, CatalogDeleteResponse
 
 router = APIRouter()
 
 
-@router.get("/api/characters")
+@router.get("/api/characters", response_model=list[CharacterResponse])
 def get_characters(conn: DbConn):
-    return find_all_content(conn, ContentKind.CHARACTER)
+    return find_all_by_kind(conn, CatalogKind.CHARACTER)
 
 
-@router.get("/api/characters/{character_id}")
+@router.get("/api/characters/{character_id}", response_model=CharacterResponse)
 def get_character_route(character_id: str, conn: DbConn):
     return get_character(conn, character_id)
 
 
-@router.post("/api/characters")
+@router.post("/api/characters", response_model=CharacterResponse)
 def post_character(conn: DbConn, body: CharacterCreateRequest):
-    return create_content_item(conn, ContentKind.CHARACTER, body.to_dict())
+    return create_catalog_item(conn, CatalogKind.CHARACTER, body.to_dict())
 
 
-@router.put("/api/characters/{character_id}")
+@router.put("/api/characters/{character_id}", response_model=CharacterResponse)
 def put_character(character_id: str, conn: DbConn, body: CharacterUpdateRequest):
-    return update_content_item(conn, ContentKind.CHARACTER, character_id, body.to_dict())
+    return update_catalog_item(conn, CatalogKind.CHARACTER, character_id, body.to_dict())
 
 
-@router.delete("/api/characters/{character_id}")
+@router.delete("/api/characters/{character_id}", response_model=CatalogDeleteResponse)
 def delete_character(character_id: str, conn: DbConn):
-    return delete_content_item(conn, ContentKind.CHARACTER, character_id)
+    return delete_catalog_item(conn, CatalogKind.CHARACTER, character_id)

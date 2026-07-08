@@ -7,10 +7,10 @@ from ai.settings import DEFAULT_NUM_PREDICT, OPENAI_BASE_URL, OPENAI_TEMPERATURE
 from ai.errors import EmptyOutputError, ProviderBadGatewayError
 from ai.transport.http_client import HttpClient
 from ai.transport.http_errors import translate_http_errors
-from ai.model import GenerateRequest, GenerateResponse
+from ai.specs import GenerateRequest
 from ai.providers.base import AIProvider
 from ai.transport.sse import aiter_sse_events
-from util.dict_util import get_safe_dict, get_safe_list
+from util.safe_util import get_safe_dict
 
 
 _ENDPOINT = OPENAI_BASE_URL.rstrip("/") + "/v1/responses"
@@ -26,25 +26,12 @@ def _api_key() -> str:
 def to_openai_payload(req: GenerateRequest) -> dict:
     return {
         "model": req.model,
-        "instructions": req.prompt,
-        "input": [{"role": "user", "content": req.user_message}],
+        "instructions": req.system,
+        "input": [{"role": m.role, "content": m.content} for m in req.messages],
         "max_output_tokens": req.num_predict or DEFAULT_NUM_PREDICT,
         "temperature": OPENAI_TEMPERATURE,
         "stream": req.stream,
     }
-
-
-def _extract_output_text(body: dict) -> str:
-    output_text: str | None = body.get("output_text")
-    if output_text:
-        return output_text
-    parts: list[str] = [
-        content_item["text"]
-        for item in get_safe_list(body, "output")
-        for content_item in get_safe_list(item, "content")
-        if content_item.get("text")
-    ]
-    return "".join(parts)
 
 
 class OpenAIProvider(AIProvider):
@@ -52,19 +39,6 @@ class OpenAIProvider(AIProvider):
 
     def _headers(self) -> dict:
         return {"Content-Type": "application/json", "Authorization": f"Bearer {_api_key()}"}
-
-    async def generate(self, req: GenerateRequest) -> GenerateResponse:
-        payload: dict = to_openai_payload(req)
-        client: httpx.AsyncClient = HttpClient().get()
-        async with translate_http_errors(self.name):
-            res: httpx.Response = await client.post(_ENDPOINT, json=payload, headers=self._headers(), timeout=OPENAI_TIMEOUT)
-            res.raise_for_status()
-            body: dict = res.json()
-
-        content: str = _extract_output_text(body)
-        if not content:
-            raise EmptyOutputError("openai produced no content")
-        return GenerateResponse(text=content, provider=self.name)
 
     async def stream(self, req: GenerateRequest) -> AsyncIterator[str]:
         payload: dict = to_openai_payload(req)

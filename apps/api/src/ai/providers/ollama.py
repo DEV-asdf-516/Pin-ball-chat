@@ -9,9 +9,9 @@ from ai.settings import DEFAULT_NUM_CTX, DEFAULT_NUM_PREDICT, OLLAMA_KEEP_ALIVE,
 from ai.errors import EmptyOutputError
 from ai.transport.http_client import HttpClient
 from ai.transport.http_errors import translate_http_errors
-from ai.model import GenerateRequest, GenerateResponse
+from ai.specs import GenerateRequest
 from ai.providers.base import AIProvider
-from util.dict_util import get_safe_dict
+from util.safe_util import get_safe_dict
 
 
 def is_qwen3_model(model: str) -> bool:
@@ -46,8 +46,8 @@ def to_ollama_payload(req: GenerateRequest) -> dict:
         "keep_alive": OLLAMA_KEEP_ALIVE,
         "options": options,
         "messages": [
-            {"role": "system", "content": req.prompt},
-            {"role": "user", "content": req.user_message},
+            {"role": "system", "content": req.system},
+            *({"role": m.role, "content": m.content} for m in req.messages),
         ],
     }
 
@@ -59,33 +59,6 @@ def to_ollama_payload(req: GenerateRequest) -> dict:
 
 class OllamaProvider(AIProvider):
     name = "ollama"
-
-    async def generate(self, req: GenerateRequest) -> GenerateResponse:
-        return await self._generate_internal(req, retried=False)
-
-    async def _generate_internal(self, req: GenerateRequest, retried: bool) -> GenerateResponse:
-        payload: dict = to_ollama_payload(req)
-        url: str = _base_url().rstrip("/") + "/api/chat"
-        client: httpx.AsyncClient = HttpClient().get()
-
-        async with translate_http_errors("ollama", _is_bad_gateway):
-            res: httpx.Response = await client.post(url, json=payload, timeout=OLLAMA_TIMEOUT)
-            res.raise_for_status()
-            body: dict = res.json()
-
-        content: str = get_safe_dict(body, "message").get("content") or body.get("response") or ""
-
-        if _is_qwen3_response_empty(req.model, content):
-            if not retried:
-                fallback_tokens: int = max(req.num_predict or DEFAULT_NUM_PREDICT, 256)
-                retried_response: GenerateResponse = await self._generate_internal(replace(req, num_predict=fallback_tokens), True)
-                return replace(retried_response, fallback_applied=True)
-            raise EmptyOutputError("qwen3 produced no content with think:false")
-
-        if not content:
-            raise EmptyOutputError("ollama produced no content")
-
-        return GenerateResponse(text=content, provider=self.name, fallback_applied=retried)
 
     async def stream(self, req: GenerateRequest) -> AsyncIterator[str]:
         async for token in self._stream_internal(req, retried=False):

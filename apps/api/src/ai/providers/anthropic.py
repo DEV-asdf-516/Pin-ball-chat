@@ -7,10 +7,10 @@ from ai.settings import ANTHROPIC_API_VERSION, ANTHROPIC_BASE_URL, ANTHROPIC_TEM
 from ai.errors import EmptyOutputError, ProviderBadGatewayError
 from ai.transport.http_client import HttpClient
 from ai.transport.http_errors import translate_http_errors
-from ai.model import GenerateRequest, GenerateResponse
+from ai.specs import GenerateRequest
 from ai.providers.base import AIProvider
 from ai.transport.sse import aiter_sse_events
-from util.dict_util import get_safe_dict, get_safe_list
+from util.safe_util import get_safe_dict
 
 
 _ENDPOINT = ANTHROPIC_BASE_URL.rstrip("/") + "/v1/messages"
@@ -26,18 +26,12 @@ def _api_key() -> str:
 def to_anthropic_payload(req: GenerateRequest) -> dict:
     return {
         "model": req.model,
-        "system": req.prompt,
-        "messages": [{"role": "user", "content": req.user_message}],
+        "system": req.system,
+        "messages": [{"role": m.role, "content": m.content} for m in req.messages],
         "max_tokens": req.num_predict or DEFAULT_NUM_PREDICT,
         "temperature": ANTHROPIC_TEMPERATURE,
         "stream": req.stream,
     }
-
-
-def _extract_output_text(body: dict) -> str:
-    return "".join(block.get("text", "") 
-                   for block in get_safe_list(body, "content") 
-                   if block.get("type") == "text")
 
 
 class AnthropicProvider(AIProvider):
@@ -49,19 +43,6 @@ class AnthropicProvider(AIProvider):
             "content-type": "application/json",
             "x-api-key": _api_key(),
         }
-
-    async def generate(self, req: GenerateRequest) -> GenerateResponse:
-        payload: dict = to_anthropic_payload(req)
-        client: httpx.AsyncClient = HttpClient().get()
-        async with translate_http_errors(self.name):
-            res: httpx.Response = await client.post(_ENDPOINT, json=payload, headers=self._headers(), timeout=ANTHROPIC_TIMEOUT)
-            res.raise_for_status()
-            body: dict = res.json()
-
-        content: str = _extract_output_text(body)
-        if not content:
-            raise EmptyOutputError("anthropic produced no content")
-        return GenerateResponse(text=content, provider=self.name)
 
     async def stream(self, req: GenerateRequest) -> AsyncIterator[str]:
         payload: dict = to_anthropic_payload(req)

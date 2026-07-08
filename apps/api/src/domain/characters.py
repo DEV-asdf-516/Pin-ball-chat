@@ -1,12 +1,10 @@
 import sqlite3
 
-from core.errors import NotFound
-from domain.content.reader import find_content_by_id
-from domain.content.specs import ContentKind
+from core.errors import get_or_raise
+from domain.catalog.reader import find_catalog_by_id
+from domain.catalog.specs import CatalogKind
 
 
 def get_character(conn: sqlite3.Connection, character_id: str) -> dict:
-    row: dict | None = find_content_by_id(conn, ContentKind.CHARACTER, character_id)
-    if not row:
-        raise NotFound(f"character {character_id} not found")
-    return row
+    row: dict | None = find_catalog_by_id(conn, CatalogKind.CHARACTER, character_id)
+    return get_or_raise(row, f"character {character_id} not found")

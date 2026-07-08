@@ -2,18 +2,18 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from domain.generation_params import GenerationParams
+from domain.specs import GenerationParams
 
 
 class CamelModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-class ContentBody(CamelModel):
+class CatalogBody(CamelModel):
     """character/user_profile/plot/preference create/update body의 공통 베이스.
 
     content 파일은 정의 안 된 필드도 그대로 저장하는 라운드트립 계약이 있어서
-    (`write_content_file`이 dict를 통째로 파일에 쓴다), 알려지지 않은 필드를
+    (`write_catalog_file`이 dict를 통째로 파일에 쓴다), 알려지지 않은 필드를
     버리지 않도록 `extra="allow"`를 쓴다.
     """
 
@@ -23,7 +23,7 @@ class ContentBody(CamelModel):
         return self.model_dump(by_alias=True, exclude_none=True)
 
 
-class CharacterCreateRequest(ContentBody):
+class CharacterCreateRequest(CatalogBody):
     id: str
     type: str = "character"
     source_text: str = Field(alias="sourceText")
@@ -31,14 +31,14 @@ class CharacterCreateRequest(ContentBody):
     display_name: str | None = Field(default=None, alias="displayName")
 
 
-class CharacterUpdateRequest(ContentBody):
+class CharacterUpdateRequest(CatalogBody):
     type: str = "character"
     source_text: str = Field(alias="sourceText")
     name: str | None = None
     display_name: str | None = Field(default=None, alias="displayName")
 
 
-class UserProfileCreateRequest(ContentBody):
+class UserProfileCreateRequest(CatalogBody):
     id: str
     type: str = "user_profile"
     source_text: str = Field(alias="sourceText")
@@ -46,14 +46,14 @@ class UserProfileCreateRequest(ContentBody):
     display_name: str | None = Field(default=None, alias="displayName")
 
 
-class UserProfileUpdateRequest(ContentBody):
+class UserProfileUpdateRequest(CatalogBody):
     type: str = "user_profile"
     source_text: str = Field(alias="sourceText")
     name: str | None = None
     display_name: str | None = Field(default=None, alias="displayName")
 
 
-class PlotCreateRequest(ContentBody):
+class PlotCreateRequest(CatalogBody):
     id: str
     type: str = "plot"
     character_id: str = Field(alias="characterId")
@@ -63,7 +63,7 @@ class PlotCreateRequest(ContentBody):
     genre: list[str] = Field(default_factory=list)
 
 
-class PlotUpdateRequest(ContentBody):
+class PlotUpdateRequest(CatalogBody):
     type: str = "plot"
     character_id: str = Field(alias="characterId")
     user_profile_id: str = Field(alias="userProfileId")
@@ -72,7 +72,7 @@ class PlotUpdateRequest(ContentBody):
     genre: list[str] = Field(default_factory=list)
 
 
-class PreferenceCreateRequest(ContentBody):
+class PreferenceCreateRequest(CatalogBody):
     id: str
     type: str = "preference"
     profile: dict[str, Any]
@@ -81,7 +81,7 @@ class PreferenceCreateRequest(ContentBody):
     ooc: list[str] = Field(default_factory=list)
 
 
-class PreferenceUpdateRequest(ContentBody):
+class PreferenceUpdateRequest(CatalogBody):
     type: str = "preference"
     profile: dict[str, Any]
     scope: str = "global"
@@ -163,13 +163,6 @@ class ConversationResponse(BaseModel):
     plotId: str
 
 
-class ChatResponse(BaseModel):
-    generationId: str
-    turnId: str
-    output: str
-    candidateIndex: int
-
-
 class SelectResponse(BaseModel):
     generationId: str
     selected: bool
@@ -178,3 +171,76 @@ class SelectResponse(BaseModel):
 class EditResponse(BaseModel):
     generationId: str
     edited: bool
+
+
+class CatalogItemResponse(BaseModel):
+    id: str
+    source_format: str
+    source_text: str
+    created_at: str
+    updated_at: str
+
+
+class CharacterResponse(CatalogItemResponse):
+    name: str
+    profile_json: str
+
+
+class UserProfileResponse(CatalogItemResponse):
+    name: str
+    profile_json: str
+
+
+class PlotResponse(CatalogItemResponse):
+    title: str
+    character_id: str
+    user_profile_id: str
+    plot_json: str
+
+
+class PreferenceResponse(CatalogItemResponse):
+    scope: str
+    scope_id: str | None = None
+    profile_json: str
+
+
+class CatalogDeleteResponse(BaseModel):
+    id: str
+    deleted: bool
+
+
+class ConversationDetailResponse(BaseModel):
+    id: str
+    plot_id: str
+    title: str | None = None
+    active_adapter_id: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class MessageItem(BaseModel):
+    id: str
+    conversation_id: str
+    role: str
+    content: str
+    turn_id: str
+    generation_id: str | None = None
+    created_at: str
+
+
+class MessagesPageResponse(BaseModel):
+    messages: list[MessageItem]
+    nextCursor: str | None = None
+    hasMore: bool
+
+
+class ConversationSettingsResponse(BaseModel):
+    conversation_id: str
+    provider: str | None = None
+    model: str | None = None
+    num_predict: int | None = None
+    num_ctx: int | None = None
+    compact_prompt: bool | None = None
+    adapter_id: str | None = None
+    created_at: str
+    updated_at: str

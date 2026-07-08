@@ -2,18 +2,17 @@ from dataclasses import dataclass
 
 
 @dataclass
+class Message:
+    role: str
+    content: str
+
+
+@dataclass
 class GenerateRequest:
-    prompt: str
-    user_message: str
+    system: str
+    messages: list[Message]
     model: str
     candidate_index: int
     num_predict: int | None = None
     num_ctx: int | None = None
     stream: bool = False
-
-
-@dataclass
-class GenerateResponse:
-    text: str
-    provider: str
-    fallback_applied: bool = False
