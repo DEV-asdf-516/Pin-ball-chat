@@ -1,10 +1,9 @@
-from core.db.specs import CursorQuery, Not, RawSQL, TableSpec
+from core.db.specs import Not, RawSQL, TableSpec
 from core.db.sqlite import (
     DB_PATH,
     ROOT,
     TABLE_NAMES,
     connect,
-    cursor,
     delete,
     exists,
     fetch_all,
@@ -20,7 +19,6 @@ from core.db.sqlite import (
 )
 
 __all__ = [
-    "CursorQuery",
     "Not",
     "RawSQL",
     "TableSpec",
@@ -28,7 +26,6 @@ __all__ = [
     "ROOT",
     "TABLE_NAMES",
     "connect",
-    "cursor",
     "delete",
     "exists",
     "fetch_all",

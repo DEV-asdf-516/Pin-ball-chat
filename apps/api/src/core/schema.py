@@ -126,4 +126,13 @@ CREATE TABLE IF NOT EXISTS generation_edits (
   created_at TEXT NOT NULL,
   FOREIGN KEY(generation_id) REFERENCES generations(id)
 );
+
+-- 최근 메시지 조회 (conversation_id 필터 + rowid 역순)
+CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
+
+-- 턴의 후보 생성물 조회 (재생성/후보 선택 시)
+CREATE INDEX IF NOT EXISTS idx_generations_turn ON generations(turn_id);
+
+-- 대화의 턴 목록 조회
+CREATE INDEX IF NOT EXISTS idx_turns_conversation ON turns(conversation_id);
 """

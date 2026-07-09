@@ -77,19 +77,14 @@ async def main():
             assert var not in prompt, f"미치환 변수: {var}"
 
         # 필수 섹션이 모두 존재하는지
-        for tag in ["role", "character_profile", "user_profile", "plot_profile", "input_notation", "current_input", "generation_rules"]:
-            assert f"<{tag}>" in prompt and f"</{tag}>" in prompt, f"섹션 누락: {tag}"
+        for tag in ["system", "story", "title", "information", "char ", "user ", "style", "mandatory_rules", "output_format", "current_input"]:
+            assert f"<{tag.strip()}" in prompt, f"섹션 누락: {tag}"
 
-        # 제거된 섹션이 남아 있지 않은지
-        assert "<merged_preferences>" not in prompt
-
-        # <generation_rules> 내용 — global.json에서 온 규칙, 선호:/금지: 레이블
-        assert "AI라고 말하지 않는다" in prompt
-        assert "선호:" in prompt
-        assert "금지:" in prompt
-
-        # <input_notation> 내용 — global.json inputMarkup
-        assert "OOC:" in prompt
+        # system_prompt.json에서 온 고정 규칙이 반영됐는지
+        assert "관찰자" in prompt
+        assert "Character agency" in prompt
+        assert "NSFW" in prompt
+        assert "@이름:" in prompt
 
     print(json.dumps({"ok": True, "db": "temporary", "turnId": first["turnId"]}, ensure_ascii=False))
 

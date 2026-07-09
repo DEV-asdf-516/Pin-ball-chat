@@ -3,7 +3,7 @@ from ai.specs import GenerateRequest
 from ai.providers.base import AIProvider
 from ai.providers.anthropic import AnthropicProvider
 from ai.providers.gemini import GeminiProvider
-from ai.providers.ollama import OllamaProvider, is_qwen3_model, to_ollama_payload
+from ai.providers.ollama import OllamaProvider, to_ollama_payload
 from ai.providers.openai import OpenAIProvider
 from ai.providers.stub import LocalStubProvider
 
@@ -51,7 +51,7 @@ def runtime_params(req: GenerateRequest, provider_name: str | None = None, fallb
             "options": payload["options"],
             "stream": req.stream,
             "runtimeMessages": payload["messages"],
-            "disableThinking": is_qwen3_model(req.model),
+            "disableThinking": payload.get("think") is False,
             "think": payload.get("think"),
         })
 

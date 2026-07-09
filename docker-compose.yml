@@ -22,6 +22,7 @@ services:
       - ./user_profiles:/app/user_profiles
       - ./plots:/app/plots
       - ./preferences:/app/preferences
+      - ./rules:/app/rules
     depends_on:
       - ollama
 

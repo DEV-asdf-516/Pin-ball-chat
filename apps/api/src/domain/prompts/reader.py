@@ -4,12 +4,11 @@ import sqlite3
 from dataclasses import dataclass
 
 from ai.specs import Message
-from core.db import fetch_all, find_all, find_one
+from core.db import ROOT, fetch_all, find_all, find_one
 from core.errors import get_or_raise
 from domain.catalog.reader import find_catalog_by_id
 from domain.catalog.specs import SPEC_BY_KIND, CharacterData, CatalogKind, PlotData, UserProfileData, parse_catalog_data
 from domain.conversations.specs import CONVERSATIONS
-from util.safe_util import get_safe_list
 
 
 _OOC_PATTERN = re.compile(
@@ -17,6 +16,9 @@ _OOC_PATTERN = re.compile(
     r"|OOC:\s*(?P<bare>.*)$",
     re.IGNORECASE,
 )
+
+_SYSTEM_PROMPT_PATH = ROOT / "rules" / "system_prompt.json"
+_SYSTEM_PROMPT: dict = json.loads(_SYSTEM_PROMPT_PATH.read_text(encoding="utf-8"))
 
 
 @dataclass
@@ -166,8 +168,16 @@ def merged_preferences(conn: sqlite3.Connection, plot: dict, conversation_id: st
     return merged, pref_ooc
 
 
-def _wrap_tag(tag: str, content: str) -> str:
-    return f"<{tag}>\n{content}\n</{tag}>"
+def tag(name: str, content: str) -> str:
+    return f"<{name}>\n{content.strip()}\n</{name}>"
+
+
+def described(description: str, name: str, content: str) -> str:
+    return f"{description}\n{tag(name, content)}"
+
+
+def _section_text(key: str) -> str:
+    return "\n".join(_SYSTEM_PROMPT[key].get("content", []))
 
 
 def snapshot_text(system: str, messages: list[Message]) -> str:
@@ -175,6 +185,9 @@ def snapshot_text(system: str, messages: list[Message]) -> str:
 
 
 def build_prompt(conn: sqlite3.Connection, conversation_id: str, user_message: str) -> BuiltPrompt:
+    """system_prompt.json에 정의된 관찰자 프롬프트 골격 위에, 이 conversation의 캐릭터/유저/플롯 데이터를 채워 넣는다.
+    TODO: preferences.json을 로어북처럼 쓰는 방식으로 나중에 다시 연결한다."""
+    
     _, plot, char, user = resolve_prompt_context(conn, conversation_id)
     char_json: dict = row_json(char, "profile_json")
     user_json: dict = row_json(user, "profile_json")
@@ -183,23 +196,16 @@ def build_prompt(conn: sqlite3.Connection, conversation_id: str, user_message: s
     user_data: UserProfileData = parse_catalog_data(CatalogKind.USER_PROFILE, user_json)
     plot_data: PlotData = parse_catalog_data(CatalogKind.PLOT, plot_json)
     ctx: dict = {
-        "char": char_data.display_name or char_data.name or char["id"],
-        "user": user_data.display_name or user_data.name or user["id"],
+        "char": char_data.name or char_data.display_name or char["id"],
+        "user": user_data.name or user_data.display_name or user["id"],
         "plot": plot_data.title or plot["id"],
     }
     warnings: list = []
-    pref, pref_ooc = merged_preferences(conn, plot, conversation_id)
-    parts: list[tuple[str, str]] = []
-    ooc: list[str] = []
-    for tag, payload, source in [
-        ("character_profile", char_json, char["source_text"]),
-        ("user_profile", user_json, user["source_text"]),
-        ("plot_profile", plot_json, plot["source_text"]),
-    ]:
-        rendered: str = render_value(source_for(payload, source), ctx, warnings)
-        body, found_ooc = extract_ooc(rendered)
-        parts.append((tag, body))
-        ooc.extend(found_ooc)
+
+    char_body, _ = extract_ooc(render_value(source_for(char_json, char["source_text"]), ctx, warnings))
+    user_body, _ = extract_ooc(render_value(source_for(user_json, user["source_text"]), ctx, warnings))
+    plot_body, _ = extract_ooc(render_value(source_for(plot_json, plot["source_text"]), ctx, warnings))
+
     recent: list[sqlite3.Row] = fetch_all(
         conn,
         """
@@ -208,27 +214,28 @@ def build_prompt(conn: sqlite3.Connection, conversation_id: str, user_message: s
         LEFT JOIN generations g ON m.generation_id = g.id
         WHERE m.conversation_id=? AND (m.generation_id IS NULL OR g.rejected=0)
         ORDER BY m.rowid DESC
-        LIMIT 12
+        LIMIT 20
         """,
         (conversation_id,),
     )
-    generation_rules: list[str] = [
-        *[render_value(r, ctx, warnings) for r in get_safe_list(pref, "generationRules")],
-        *[f"선호: {render_value(n, ctx, warnings)}" for n in get_safe_list(pref, "preferredNotes")],
-        *[f"금지: {render_value(p, ctx, warnings)}" for p in get_safe_list(pref, "dislikedPatterns")],
-        *ooc,
-        *[render_value(o, ctx, warnings) for o in pref_ooc],
-    ]
-    input_markup: list[str] = [render_value(m, ctx, warnings) for m in get_safe_list(pref, "inputMarkup")]
+
+    story_body: str = "\n\n".join([
+        tag("title", ctx["plot"]),
+        tag("information", plot_body),
+        f'<char name="{ctx["char"]}" role="assistant">\n{char_body}\n</char>',
+        f'<char name="관찰자" role="assistant">\n{_SYSTEM_PROMPT["story"]["observer_char"]}\n</char>',
+        f'<user name="{ctx["user"]}" role="user">\n{user_body}\n</user>',
+    ])
+
     system: str = "\n\n".join([
-        _wrap_tag("role", render_value("너는 {{char}}다. {{user}}(사용자)의 메시지에 {{char}}로 응답한다.", ctx, warnings)),
-        *[_wrap_tag(tag, body) for tag, body in parts],
-        _wrap_tag("input_notation", "\n".join(f"- {line}" for line in input_markup if line)),
-        _wrap_tag("generation_rules", "\n".join(f"- {line}" for line in generation_rules if line)),
-        "RESPOND NOW in Korean only. Do not explain, reason, translate, or plan. Output the roleplay scene directly.",
+        described(_SYSTEM_PROMPT["system"]["description"], "system", render_value(_section_text("system"), ctx, warnings)),
+        described(_SYSTEM_PROMPT["story"]["description"], "story", story_body),
+        described(_SYSTEM_PROMPT["style"]["description"], "style", ""),
+        described(_SYSTEM_PROMPT["mandatory_rules"]["description"], "mandatory_rules", render_value(_section_text("mandatory_rules"), ctx, warnings)),
+        described(_SYSTEM_PROMPT["output_format"]["description"], "output_format", render_value(_section_text("output_format"), ctx, warnings)),
     ])
     messages: list[Message] = [
         *[Message(role=r["role"], content=r["content"]) for r in reversed(recent)],
-        Message(role="user", content=_wrap_tag("current_input", user_input_interpretation(user_message, ctx))),
+        Message(role="user", content=described(_SYSTEM_PROMPT["current_input_description"], "current_input", user_input_interpretation(user_message, ctx))),
     ]
     return BuiltPrompt(system=system, messages=messages, warnings=warnings, plot=plot, char=char, user=user)

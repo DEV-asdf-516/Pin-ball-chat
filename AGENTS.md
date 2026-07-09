@@ -23,7 +23,7 @@ src/
     router.py
     dependencies.py
     errors.py
-    schemas.py
+    specs.py
     routes/
   domain/
   ai/
@@ -62,12 +62,8 @@ HTTP 계층이다.
 
 ### `ai/`
 AI provider 연동만 담당한다. 전부 async (httpx 기반) — provider 호출부는 실제 네트워크 I/O를 기다려야 해서 예외적으로 async 전환됨.
-```text
-ai/
-  transport/   # HTTP 저수준 유틸 (공유 클라이언트, 에러 변환, SSE 파싱)
-  providers/   # base.py(AIProvider 추상 계약) + provider별 구현
-```
-- 새 provider를 추가할 땐 `AIProvider`를 상속하고 `name`/`generate()`/`stream()`만 구현한다.
+`ai/transport/`(HTTP 저수준 유틸)와 `ai/providers/`(provider별 구현)로 나뉜다.
+- 새 provider를 추가할 땐 `AIProvider`를 상속하고 `name`/`stream()`만 구현한다. provider는 `stream()`으로만 소비된다 (non-streaming 경로 없음).
 - 여러 `async with`가 겹칠 땐 중첩하지 말고 괄호로 묶은 단일 `async with (...)`로 flat하게 쓴다 (Python 3.10+).
 금지:
 - DB write
@@ -121,33 +117,10 @@ low-level infrastructure를 담당한다.
 - route handler는 request 파싱, dependency 수신, domain 함수 호출, domain error 매핑, response 반환만 담당한다.
 - route handler에 긴 flow, SQL 세부 구현, provider 호출을 넣지 않는다.
 
-## 파일 기반 콘텐츠 import 규칙
-파일 기반 콘텐츠 import는 다음 기준을 따른다.
-```text
-domain/
-  content/
-    specs.py
-    importer.py
-    reader.py
-    writer.py
-  characters.py
-  user_profiles.py
-  plots.py
-util/
-  frontmatter.py
-  content_file_util.py
-  time_util.py
-```
-- `specs.py`: `ContentKind` enum, dirname/table/kind/columns 매핑 (`CONTENT_SPECS`, `KIND_DIR`, `KIND_TABLE`, `TABLE_COLUMNS`), `ContentPayload` 및 하위 dataclass, `parse_content_data` — 콘텐츠 스키마의 단일 소스
-- `reader.py`: 조회 전용 (`find_content_by_id`, `content_exists`, `find_all_content`) — `core.db`의 `find_by_id`/`exists`/`find_all`을 `KIND_TABLE` 기준으로 감싼다
-- `writer.py`: 콘텐츠 항목 쓰기 전담. `upsert_content_item`(단일 항목 DB upsert, `importer.py`와 공유하는 저수준 프리미티브)과 `create_content_item`/`update_content_item`/`delete_content_item`(파일 쓰기 + DB upsert, id/참조 검증)을 모두 포함한다
-- `importer.py`: 대량 import 흐름, type 검증, 참조 검증, error 수집 — 실제 upsert는 `writer.py`의 `upsert_content_item`에 위임
-- `domain/characters.py`, `domain/user_profiles.py`, `domain/plots.py`: 각 리소스의 단건 조회(`get_character`/`get_user_profile`/`get_plot`, 없으면 `NotFound`) — 실제 사용처(해당 `server/routes/*.py`)와 1:1로 대응하는 도메인 파일
-- `frontmatter.py`: Markdown frontmatter parser/renderer
-- `content_file_util.py`: 파일 하나를 읽고/쓰며 표준 tuple로 변환
-- `time_util.py`: 범용 시간 helper
+## 파일 기반 카탈로그 import 규칙
+파일 기반 카탈로그(character/user_profile/plot/preference) import는 `domain/catalog/`(specs/reader/writer/importer 컨벤션)와 `domain/{characters,user_profiles,plots}.py`, `util/{frontmatter,catalog_util,time_util}.py`로 구성된다. 세부 함수 구성은 코드를 직접 확인한다.
 - DB table/column을 아는 코드는 `util/`에 두지 않는다.
-- `kind` 값은 문자열 하드코딩 대신 `domain.content.specs.ContentKind`를 쓴다.
+- `kind` 값은 문자열 하드코딩 대신 `domain.catalog.specs.CatalogKind`를 쓴다.
 
 ## 콘텐츠 파일 포맷 계약
 
@@ -166,11 +139,11 @@ util/
 ### preference 필드 → 프롬프트 섹션 매핑
 | 필드 | 프롬프트 섹션 | 비고 |
 |---|---|---|
-| `profile.generationRules[]` | `[생성 규칙]` | 직접 bullet |
-| `profile.preferredNotes[]` | `[생성 규칙]` | "선호: " 접두사 |
-| `profile.dislikedPatterns[]` | `[생성 규칙]` | "금지: " 접두사 |
-| `profile.inputMarkup[]` | `[입력 표기]` | 직접 bullet |
-| `ooc[]` | `[생성 규칙]` | 직접 bullet |
+| `profile.generationRules[]` | `<generation_rules>` | 직접 bullet |
+| `profile.preferredNotes[]` | `<generation_rules>` | "선호: " 접두사 |
+| `profile.dislikedPatterns[]` | `<generation_rules>` | "금지: " 접두사 |
+| `profile.inputMarkup[]` | `<input_notation>` | 직접 bullet |
+| `ooc[]` | `<generation_rules>` | 직접 bullet |
 
 ### preference scope 우선순위
 `global` → `genre` → `character` → `plot` → `conversation`

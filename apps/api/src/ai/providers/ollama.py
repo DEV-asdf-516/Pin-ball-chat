@@ -43,6 +43,7 @@ def to_ollama_payload(req: GenerateRequest) -> dict:
     payload: dict = {
         "model": req.model,
         "stream": req.stream,
+        "think": False,
         "keep_alive": OLLAMA_KEEP_ALIVE,
         "options": options,
         "messages": [
@@ -50,9 +51,6 @@ def to_ollama_payload(req: GenerateRequest) -> dict:
             *({"role": m.role, "content": m.content} for m in req.messages),
         ],
     }
-
-    if is_qwen3_model(req.model):
-        payload["think"] = False
 
     return payload
 

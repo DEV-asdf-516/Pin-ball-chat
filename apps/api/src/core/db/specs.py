@@ -10,16 +10,6 @@ class TableSpec:
 
 
 @dataclass(frozen=True)
-class CursorQuery:
-    """cursor()의 필터/페이지 파라미터를 하나로 묶는다. 커서 페이지네이션을 쓰는 호출부마다 이 객체 하나만 만들어 넘긴다."""
-    filter_column: str
-    filter_value: str
-    before: int | None
-    limit: int
-    max_limit: int = 200
-
-
-@dataclass(frozen=True)
 class RawSQL:
     """update()의 set dict에서, 바인딩 값이 아니라 기존 컬럼값을 참조하는 SQL 표현식(예: regenerate_count+1)임을 표시한다."""
     sql: str

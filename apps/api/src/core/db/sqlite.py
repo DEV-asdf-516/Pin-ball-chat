@@ -3,7 +3,7 @@ import sqlite3
 import uuid
 from pathlib import Path
 
-from core.db.specs import CursorQuery, Not, RawSQL, TableSpec
+from core.db.specs import Not, RawSQL, TableSpec
 from core.schema import SCHEMA_DDL
 from util.string_util import join_columns
 
@@ -152,43 +152,3 @@ def upsert(conn: sqlite3.Connection, spec: TableSpec, values: dict) -> None:
         """,
         tuple(values[c] for c in spec.columns),
     )
-
-def cursor(conn: sqlite3.Connection, spec: TableSpec, query: CursorQuery) -> dict:
-    """rowid 내림차순 커서 페이지네이션. before가 있으면 그보다 오래된(rowid 작은) 행부터, 없으면 최신 행부터 가져온다."""
-    limit: int = max(1, min(query.limit, query.max_limit))
-    cols: str = select_cols(spec.table)
-    cursor_clause: str = "AND rowid<?" if query.before is not None else ""
-    params: tuple = (query.filter_value, query.before, limit) if query.before is not None else (query.filter_value, limit)
-
-    rows_desc: list[sqlite3.Row] = fetch_all(
-        conn,
-        f"""
-        SELECT rowid, {cols}
-        FROM {spec.table}
-        WHERE {query.filter_column}=? {cursor_clause}
-        ORDER BY rowid DESC
-        LIMIT ?
-        """,
-        params,
-    )
-    items: list[dict] = [dict(r) for r in rows_desc]
-    has_more: bool = False
-    
-    if items:
-        oldest_rowid: int = items[-1]["rowid"]
-        has_more = exists(conn, 
-                          spec, 
-                          query.filter_column, 
-                          query.filter_value, 
-                          extra_where="AND rowid<?",
-                          extra_params=(oldest_rowid,)
-                        )
-    
-    next_cursor: str | None = str(items[-1]["rowid"]) if has_more else None
-    
-    for item in items:
-        item.pop("rowid")
-    
-    items.reverse()
-    
-    return {"items": items, "nextCursor": next_cursor, "hasMore": has_more}
