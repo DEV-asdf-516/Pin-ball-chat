@@ -3,7 +3,7 @@ import sqlite3
 import uuid
 from pathlib import Path
 
-from core.db.specs import Not, RawSQL, TableSpec
+from core.db.specs import Bind, CursorQuery, Eq, Gt, In, Lt, Ne, NotIn, ReadQuery, RawSQL, TableSpec, WriteQuery
 from core.schema import SCHEMA_DDL
 from util.string_util import join_columns
 
@@ -29,14 +29,6 @@ TABLE_NAMES: list[str] = [
 _column_cache: dict[str, str] = {}
 
 
-def select_cols(table: str) -> str:
-    return _column_cache[table]
-
-
-def new_id(prefix: str) -> str:
-    return f"{prefix}_{uuid.uuid4().hex[:12]}"
-
-
 def connect(db_path: str | Path = DB_PATH) -> sqlite3.Connection:
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -57,91 +49,125 @@ def init_db(conn: sqlite3.Connection) -> None:
         _column_cache[table] = join_columns(tuple(row["name"] for row in conn.execute(f"PRAGMA table_info({table})")))
 
 
-def fetch_one(conn: sqlite3.Connection, query: str, params: tuple = ()) -> sqlite3.Row | None:
-    return conn.execute(query, params).fetchone()
+_OPS: dict[type, str] = {Eq: "=", Ne: "<>", Gt: ">", Lt: "<"}
+
+def _op(v) -> str:
+    return _OPS.get(type(v), "=")
 
 
-def fetch_all(conn: sqlite3.Connection, query: str, params: tuple = ()) -> list[sqlite3.Row]:
-    return conn.execute(query, params).fetchall()
+def _unwrap(v):
+    return v.value if type(v) in _OPS else v
 
 
-def find_one(conn: sqlite3.Connection, spec: TableSpec, item_id: str, column: str | None = None, extra_where: str = "", extra_params: tuple = ()) -> dict | None:
-    column = column or spec.conflict_col
-    columns: str = select_cols(spec.table)
+def _in_clause(column: str, v: In | NotIn) -> tuple[str, dict]:
+    op: str = "NOT IN" if isinstance(v, NotIn) else "IN"
+    if isinstance(v.values, RawSQL):
+        return f"{column} {op} ({v.values.sql})", dict(v.params.values)
+    names: list[str] = [f"where_{column}_{i}" for i in range(len(v.values))]
+    return f"{column} {op} ({','.join(':' + n for n in names)})", dict(zip(names, v.values))
+
+
+def _where(conditions: Bind) -> tuple[str, dict]:
+    # update()의 set과 겹치지 않도록 바인딩 변수명에 where_ 접두사를 붙인다.
+    clauses: list[str] = []
+    params: dict = {}
+    for c, v in conditions.items():
+        if isinstance(v, (In, NotIn)):
+            clause, in_params = _in_clause(c, v)
+            clauses.append(clause)
+            params.update(in_params)
+        else:
+            clauses.append(f"{c}{_op(v)}:where_{c}")
+            params[f"where_{c}"] = _unwrap(v)
+    return " AND ".join(clauses), params
+
+def select_cols(table: str) -> str:
+    return _column_cache[table]
+
+
+def new_id(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex[:12]}"
+
+def fetch_one(conn: sqlite3.Connection, query: RawSQL, params: dict | None = None) -> sqlite3.Row | None:
+    return conn.execute(query.sql, params or {}).fetchone()
+
+
+def fetch_all(conn: sqlite3.Connection, query: RawSQL, params: dict | None = None) -> list[sqlite3.Row]:
+    return conn.execute(query.sql, params or {}).fetchall()
+
+
+def find_one(conn: sqlite3.Connection, query: ReadQuery) -> dict | None:
+    columns: str = select_cols(query.spec.table)
+    where_clause, where_params = _where(query.where)
     row: sqlite3.Row | None = fetch_one(
         conn,
-        f"""
+        RawSQL(f"""
         SELECT {columns}
-        FROM {spec.table}
-        WHERE {column}=? {extra_where}
-        """,
-        (item_id, *extra_params),
+        FROM {query.spec.table}
+        WHERE {where_clause}
+        """),
+        where_params,
     )
     return dict(row) if row else None
 
 
-def find_all(conn: sqlite3.Connection, spec: TableSpec, order_by: str = "id", where: str = "", where_params: tuple = ()) -> list[dict]:
-    columns: str = select_cols(spec.table)
+def find_all(conn: sqlite3.Connection, query: ReadQuery) -> list[dict]:
+    columns: str = select_cols(query.spec.table)
+    where_clause, where_params = _where(query.where) if query.where else ("", {})
     rows: list[sqlite3.Row] = fetch_all(
         conn,
-        f"""
+        RawSQL(f"""
         SELECT {columns}
-        FROM {spec.table}
-        {where}
-        ORDER BY {order_by}
-        """,
+        FROM {query.spec.table}
+        {"WHERE " + where_clause if where_clause else ""}
+        ORDER BY {query.order_by}
+        """),
         where_params,
     )
     return [dict(r) for r in rows]
 
 
-def exists(conn: sqlite3.Connection, spec: TableSpec, column: str, value, extra_where: str = "", extra_params: tuple = ()) -> bool:
+def paginate(conn: sqlite3.Connection, cursor_query: CursorQuery) -> dict:
+    # limit+1개를 가져와 초과분 존재 여부로 hasMore를 판정.
+    rows_desc: list[sqlite3.Row] = fetch_all(conn, cursor_query.query, cursor_query.to_dict())
+
+    has_more: bool = len(rows_desc) > cursor_query.limit
+    
+    items: list[dict] = [dict(r) for r in rows_desc[:cursor_query.limit]]
+
+    next_cursor: str | None = str(items[-1]["rowid"]) if has_more and items else None
+    
+    for item in items:
+        item.pop("rowid")
+
+    return {
+        "items": items,
+        "nextCursor": next_cursor,
+        "hasMore": has_more
+        }
+
+
+def exists(conn: sqlite3.Connection, query: ReadQuery) -> bool:
+    where_clause, where_params = _where(query.where)
     row: sqlite3.Row | None = fetch_one(
         conn,
-        f"""
+        RawSQL(f"""
         SELECT 1
-        FROM {spec.table}
-        WHERE {column}=? {extra_where}
-        """,
-        (value, *extra_params),
+        FROM {query.spec.table}
+        WHERE {where_clause}
+        """),
+        where_params,
     )
     return bool(row)
 
 
-def insert(conn: sqlite3.Connection, spec: TableSpec, values: dict) -> None:
-    placeholders: str = ",".join("?" for _ in spec.columns)
-    conn.execute(f"INSERT INTO {spec.table} ({join_columns(spec.columns)}) VALUES ({placeholders})", tuple(values[c] for c in spec.columns))
+def insert(conn: sqlite3.Connection, spec: TableSpec, values: Bind) -> None:
+    placeholders: str = ",".join(f":{c}" for c in spec.columns)
+    conn.execute(f"INSERT INTO {spec.table} ({join_columns(spec.columns)}) VALUES ({placeholders})", values.values)
 
 
-def update(conn: sqlite3.Connection, spec: TableSpec, set: dict, where: dict) -> None:
-    """set의 값이 RawSQL이면 바인딩 없이 그 SQL을 그대로 쓴다 (예: {"regenerate_count": RawSQL("regenerate_count+1")}).
-    where의 값이 Not이면 <> 비교, 그 외엔 = 비교. 여러 컬럼은 AND로 묶인다."""
-    set_clause: str = ",".join(f"{c}={v.sql}" if isinstance(v, RawSQL) else f"{c}=?" for c, v in set.items())
-    set_params: tuple = tuple(v for v in set.values() if not isinstance(v, RawSQL))
-    where_clause: str = " AND ".join(f"{c}<>?" if isinstance(v, Not) else f"{c}=?" for c, v in where.items())
-    where_params: tuple = tuple(v.value if isinstance(v, Not) else v for v in where.values())
-    conn.execute(
-        f"""
-        UPDATE {spec.table}
-        SET {set_clause}
-        WHERE {where_clause}
-        """,
-        (*set_params, *where_params),
-    )
-
-def delete(conn: sqlite3.Connection, spec: TableSpec, column: str, value) -> None:
-    conn.execute(
-        f"""
-        DELETE FROM {spec.table}
-        WHERE {column}=?
-        """,
-        (value,),
-    )
-
-
-
-def upsert(conn: sqlite3.Connection, spec: TableSpec, values: dict) -> None:
-    placeholders: str = ",".join("?" for _ in spec.columns)
+def upsert(conn: sqlite3.Connection, spec: TableSpec, values: Bind) -> None:
+    placeholders: str = ",".join(f":{c}" for c in spec.columns)
     update_cols: list[str] = [c for c in spec.columns if c not in (spec.conflict_col, "created_at")]
     updates: str = ",".join(f"{c}=excluded.{c}" for c in update_cols)
     conn.execute(
@@ -150,5 +176,28 @@ def upsert(conn: sqlite3.Connection, spec: TableSpec, values: dict) -> None:
         VALUES ({placeholders})
         ON CONFLICT({spec.conflict_col}) DO UPDATE SET {updates}
         """,
-        tuple(values[c] for c in spec.columns),
+        values.values,
+    )
+    
+def update(conn: sqlite3.Connection, query: WriteQuery) -> None:
+    set_clause: str = ",".join(f"{c}={v.sql}" if isinstance(v, RawSQL) else f"{c}=:set_{c}" for c, v in query.set.items())
+    set_params: dict = {f"set_{c}": v for c, v in query.set.items() if not isinstance(v, RawSQL)}
+    where_clause, where_params = _where(query.where)
+    conn.execute(
+        f"""
+        UPDATE {query.spec.table}
+        SET {set_clause}
+        WHERE {where_clause}
+        """,
+        {**set_params, **where_params},
+    )
+
+def delete(conn: sqlite3.Connection, query: WriteQuery) -> None:
+    where_clause, where_params = _where(query.where)
+    conn.execute(
+        f"""
+        DELETE FROM {query.spec.table}
+        WHERE {where_clause}
+        """,
+        where_params,
     )

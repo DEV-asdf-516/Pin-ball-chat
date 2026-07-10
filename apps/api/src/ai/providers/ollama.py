@@ -68,8 +68,8 @@ class OllamaProvider(AIProvider):
         client: httpx.AsyncClient = HttpClient().get()
 
         async with (
-            translate_http_errors("ollama", _is_bad_gateway),
             client.stream("POST", url, json=payload, timeout=OLLAMA_TIMEOUT) as res,
+            translate_http_errors(self.name, _is_bad_gateway),
         ):
             res: httpx.Response
             res.raise_for_status()
@@ -99,3 +99,11 @@ class OllamaProvider(AIProvider):
                 if not emitted_content:
                     raise EmptyOutputError("ollama produced no content")
                 return
+
+    async def list_models(self) -> list[str]:
+        url: str = _base_url().rstrip("/") + "/api/tags"
+        client: httpx.AsyncClient = HttpClient().get()
+        async with translate_http_errors(self.name):
+            res: httpx.Response = await client.get(url, timeout=OLLAMA_TIMEOUT)
+            res.raise_for_status()
+            return [m["name"] for m in res.json().get("models", [])]

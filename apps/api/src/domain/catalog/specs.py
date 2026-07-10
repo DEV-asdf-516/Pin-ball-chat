@@ -39,7 +39,7 @@ CATALOG_SPECS = [
         table="plots",
         kind=CatalogKind.PLOT,
         source_format="md",
-        columns=("id", "title", "character_id", "user_profile_id", "plot_json", "source_format", "source_text", "created_at", "updated_at"),
+        columns=("id", "title", "character_id", "plot_json", "source_format", "source_text", "created_at", "updated_at"),
     ),
     CatalogSpec(
         dirname="preferences",
@@ -57,7 +57,6 @@ SPEC_BY_KIND: dict[CatalogKind, CatalogSpec] = {spec.kind: spec for spec in CATA
 # kind가 늘어나도 여기 항목만 추가하면 되고, delete_catalog_item의 분기는 늘어나지 않는다.
 REFERENCED_BY: dict[CatalogKind, tuple[tuple[CatalogKind, str], ...]] = {
     CatalogKind.CHARACTER: ((CatalogKind.PLOT, "character_id"),),
-    CatalogKind.USER_PROFILE: ((CatalogKind.PLOT, "user_profile_id"),),
 }
 
 # 이 kind의 payload가 다른 kind를 참조하는 필드들을 선언한다: (참조 대상 kind, payload attribute명).
@@ -65,7 +64,6 @@ REFERENCED_BY: dict[CatalogKind, tuple[tuple[CatalogKind, str], ...]] = {
 FORWARD_REFS: dict[CatalogKind, tuple[tuple[CatalogKind, str], ...]] = {
     CatalogKind.PLOT: (
         (CatalogKind.CHARACTER, "character_id"),
-        (CatalogKind.USER_PROFILE, "user_profile_id"),
     ),
 }
 
@@ -77,12 +75,12 @@ class CatalogPayload:
 
     @property
     def columns(self) -> dict:
-        """upsert 시 id 외에 이 payload가 채우는 {컬럼명: 값} (라벨, 참조키 등)."""
+        # upsert 시 id 외에 이 payload가 채우는 {컬럼명: 값} (라벨, 참조키 등).
         return {}
 
     @property
     def json_column(self) -> str:
-        """원본 dict 전체(catalog.data)를 JSON으로 직렬화해 넣을 컬럼명."""
+        # 원본 dict 전체(catalog.data)를 JSON으로 직렬화해 넣을 컬럼명
         return "profile_json"
 
 
@@ -111,14 +109,13 @@ class UserProfileData(CatalogPayload):
 @dataclass
 class PlotData(CatalogPayload):
     character_id: str
-    user_profile_id: str
     source_text: str
     title: str | None = None
     genre: list[str] = field(default_factory=list)
 
     @property
     def columns(self) -> dict:
-        return {"title": self.title or self.id, "character_id": self.character_id, "user_profile_id": self.user_profile_id}
+        return {"title": self.title or self.id, "character_id": self.character_id}
 
     @property
     def json_column(self) -> str:
@@ -146,8 +143,8 @@ PAYLOAD_CLASS: dict[CatalogKind, type[CatalogPayload]] = {
 
 
 def parse_catalog_data(kind: CatalogKind, data: dict) -> CatalogPayload:
-    """data는 콘텐츠 파일/API 요청 바디에서 온 camelCase wire format dict다.
-    CatalogPayload 필드는 snake_case라서 매칭 전에 키를 변환한다."""
+    # data는 콘텐츠 파일/API 요청 바디에서 온 camelCase wire format dict다.
+    # CatalogPayload 필드는 snake_case라서 매칭 전에 키를 변환한다.
     cls: type[CatalogPayload] = PAYLOAD_CLASS[kind]
     
     known_fields: set[str] = {f.name for f in fields(cls)}

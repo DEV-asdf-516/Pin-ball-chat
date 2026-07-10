@@ -65,8 +65,8 @@ class GeminiProvider(AIProvider):
         client: httpx.AsyncClient = HttpClient().get()
         
         async with (
-            translate_http_errors(self.name),
             client.stream("POST", url, json=to_gemini_payload(req), timeout=GEMINI_TIMEOUT) as res,
+            translate_http_errors(self.name),
         ):
             res: httpx.Response
             res.raise_for_status()
@@ -86,3 +86,11 @@ class GeminiProvider(AIProvider):
 
             if not emitted_content:
                 raise EmptyOutputError("gemini produced no content")
+
+    async def list_models(self) -> list[str]:
+        url: str = f"{GEMINI_BASE_URL.rstrip('/')}/v1beta/models?key={parse.quote(_api_key())}"
+        client: httpx.AsyncClient = HttpClient().get()
+        async with translate_http_errors(self.name):
+            res: httpx.Response = await client.get(url, timeout=GEMINI_TIMEOUT)
+            res.raise_for_status()
+            return [m["name"].removeprefix("models/") for m in res.json().get("models", [])]

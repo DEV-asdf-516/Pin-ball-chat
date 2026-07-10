@@ -61,3 +61,10 @@ def runtime_params(req: GenerateRequest, provider_name: str | None = None, fallb
 async def stream_text(req: GenerateRequest, provider_name: str | None = None):
     async for token in resolve_provider(provider_name, req.model).stream(req):
         yield token
+
+
+async def list_provider_models(provider_name: str) -> list[str]:
+    provider: AIProvider | None = _PROVIDERS.get(provider_name)
+    if not provider:
+        raise ValueError(f"unknown ai provider: {provider_name}")
+    return await provider.list_models()

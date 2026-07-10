@@ -1,7 +1,7 @@
 import sqlite3
 from pathlib import Path
 
-from domain.catalog.reader import catalog_exists
+from domain.catalog.reader import is_catalog_exists
 from domain.catalog.specs import CATALOG_SPECS, FORWARD_REFS, CatalogKind, CatalogPayload, parse_catalog_data
 from domain.catalog.writer import upsert_catalog_item
 from util.catalog_util import LoadedCatalog, load_catalog_file
@@ -9,8 +9,8 @@ from util.safe_util import get_safe_tuple
 
 
 def _is_known(conn: sqlite3.Connection, kind: CatalogKind, item_id: str, loaded: dict[CatalogKind, set]) -> bool:
-    """이번 import 실행에서 방금 로드됐거나, 이전 실행 때 이미 DB에 있으면 True."""
-    return item_id in loaded[kind] or catalog_exists(conn, kind, item_id)
+    # 이번 import 실행에서 방금 로드됐거나, 이전 실행 때 이미 DB에 있으면 True.
+    return item_id in loaded[kind] or is_catalog_exists(conn, kind, item_id)
 
 
 def import_catalog(conn: sqlite3.Connection, root: Path) -> list[str]:

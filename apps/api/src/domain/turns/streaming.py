@@ -31,7 +31,8 @@ async def stream_response(prepared: PreparedGeneration, params: GenerationParams
     try:
         yield sse("start", {
             "conversationId": prepared.conversation_id,
-            "turnId": prepared.turn_id}
+            "turnId": prepared.turn_id,
+            "messageId": prepared.message_id}
         )
 
         async for token in stream_text(req, params.provider_name):

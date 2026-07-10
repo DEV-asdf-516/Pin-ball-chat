@@ -21,14 +21,12 @@ CREATE TABLE IF NOT EXISTS plots (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
   character_id TEXT NOT NULL,
-  user_profile_id TEXT NOT NULL,
   plot_json TEXT NOT NULL,
   source_format TEXT NOT NULL DEFAULT 'json',
   source_text TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  FOREIGN KEY(character_id) REFERENCES characters(id),
-  FOREIGN KEY(user_profile_id) REFERENCES user_profiles(id)
+  FOREIGN KEY(character_id) REFERENCES characters(id)
 );
 CREATE TABLE IF NOT EXISTS preference_profiles (
   id TEXT PRIMARY KEY,
@@ -44,11 +42,13 @@ CREATE TABLE IF NOT EXISTS preference_profiles (
 CREATE TABLE IF NOT EXISTS conversations (
   id TEXT PRIMARY KEY,
   plot_id TEXT NOT NULL,
+  user_profile_id TEXT,
   title TEXT,
   active_adapter_id TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  FOREIGN KEY(plot_id) REFERENCES plots(id)
+  FOREIGN KEY(plot_id) REFERENCES plots(id),
+  FOREIGN KEY(user_profile_id) REFERENCES user_profiles(id) ON DELETE SET NULL
 );
 CREATE TABLE IF NOT EXISTS conversation_settings (
   conversation_id TEXT PRIMARY KEY,
@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS generations (
   conversation_id TEXT NOT NULL,
   plot_id TEXT NOT NULL,
   character_id TEXT NOT NULL,
-  user_profile_id TEXT NOT NULL,
+  user_profile_id TEXT,
   model_id TEXT NOT NULL,
   adapter_id TEXT,
   candidate_index INTEGER NOT NULL,
@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS generations (
   FOREIGN KEY(conversation_id) REFERENCES conversations(id),
   FOREIGN KEY(plot_id) REFERENCES plots(id),
   FOREIGN KEY(character_id) REFERENCES characters(id),
-  FOREIGN KEY(user_profile_id) REFERENCES user_profiles(id)
+  FOREIGN KEY(user_profile_id) REFERENCES user_profiles(id) ON DELETE SET NULL
 );
 CREATE TABLE IF NOT EXISTS user_actions (
   id TEXT PRIMARY KEY,
@@ -135,4 +135,8 @@ CREATE INDEX IF NOT EXISTS idx_generations_turn ON generations(turn_id);
 
 -- 대화의 턴 목록 조회
 CREATE INDEX IF NOT EXISTS idx_turns_conversation ON turns(conversation_id);
+
+-- user_profile 삭제 시 ON DELETE SET NULL 대상 행 조회 + 유저별 대화/생성물 조회
+CREATE INDEX IF NOT EXISTS idx_conversations_user_profile ON conversations(user_profile_id);
+CREATE INDEX IF NOT EXISTS idx_generations_user_profile ON generations(user_profile_id);
 """

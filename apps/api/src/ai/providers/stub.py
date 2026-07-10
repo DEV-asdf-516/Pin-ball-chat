@@ -11,3 +11,6 @@ class LocalStubProvider(AIProvider):
         text: str = "테스트 응답이야. 지금은 local-stub으로 대답하고 있어."
         for token in text.split(" "):
             yield token + " "
+
+    async def list_models(self) -> list[str]:
+        return ["local-stub"]

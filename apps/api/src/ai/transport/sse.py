@@ -8,7 +8,7 @@ _SSE_DONE_MARKER = "[DONE]"
 
 
 async def aiter_sse_events(response: httpx.Response) -> AsyncIterator[dict]:
-    """text/event-stream 응답에서 data: 블록을 파싱해 JSON 이벤트로 yield한다."""
+    # text/event-stream 응답에서 data: 블록을 파싱해 JSON 이벤트로 yield한다.
     lines: list[str] = []
     async for line in response.aiter_lines():
         if line.strip():

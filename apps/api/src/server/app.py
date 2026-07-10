@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from ai.transport.http_client import HttpClient
 from core.db import ROOT, connect, init_db
@@ -27,6 +28,13 @@ async def lifespan(_app: FastAPI):
 
 def create_app():
     app = FastAPI(title="Pinballchat API", version="0.1.0", docs_url="/docs", openapi_url="/openapi.json", lifespan=lifespan)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     register_error_handlers(app)
     register_routes(app)
     return app

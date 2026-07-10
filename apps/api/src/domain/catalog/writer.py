@@ -3,9 +3,9 @@ import re
 import sqlite3
 from pathlib import Path
 
-from core.db import ROOT, delete, upsert
+from core.db import ROOT, Bind, WriteQuery, delete, upsert
 from core.errors import ensure
-from domain.catalog.reader import catalog_exists, find_catalog_by_id
+from domain.catalog.reader import is_catalog_exists, find_catalog_by_id
 from domain.catalog.specs import FORWARD_REFS, REFERENCED_BY, SPEC_BY_KIND, CatalogKind, CatalogPayload, CatalogSpec, parse_catalog_data
 from util.catalog_util import LoadedCatalog, write_catalog_file
 from util.safe_util import get_safe_tuple
@@ -25,11 +25,11 @@ def _file_path(kind: CatalogKind, item_id: str, root: Path) -> Path:
 
 
 def upsert_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, payload: CatalogPayload, catalog: LoadedCatalog) -> None:
-    """단일 콘텐츠 항목을 DB에 upsert한다. importer.py(대량 로드)와 이 파일의 CRUD 함수들이 공유하는 저수준 프리미티브."""
+    # 단일 콘텐츠 항목을 DB에 upsert한다. importer.py(대량 로드)와 이 파일의 CRUD 함수들이 공유하는 저수준 프리미티브.
     spec: CatalogSpec = SPEC_BY_KIND[kind]
     ts: str = utc_now_string()
 
-    values: dict = {
+    values: Bind = Bind({
         "id": payload.id,
         **payload.columns,
         payload.json_column: json.dumps(catalog.data, ensure_ascii=False),
@@ -37,7 +37,7 @@ def upsert_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, payload: Ca
         "source_text": catalog.source_text,
         "created_at": ts,
         "updated_at": ts,
-    }
+    })
 
     upsert(conn, spec, values)
 
@@ -61,7 +61,7 @@ def create_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, data: dict,
 
     for ref_kind, attr in get_safe_tuple(FORWARD_REFS, kind):
         ref_id = getattr(payload, attr)
-        if not catalog_exists(conn, ref_kind, ref_id):
+        if not is_catalog_exists(conn, ref_kind, ref_id):
             raise ValueError(f"unknown {attr} {ref_id}")
 
     source_format: str = SPEC_BY_KIND[kind].source_format
@@ -90,7 +90,7 @@ def update_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, item_id: st
 
     for ref_kind, attr in get_safe_tuple(FORWARD_REFS, kind):
         ref_id = getattr(payload, attr)
-        if not catalog_exists(conn, ref_kind, ref_id):
+        if not is_catalog_exists(conn, ref_kind, ref_id):
             raise ValueError(f"unknown {attr} {ref_id}")
 
     source_format: str = SPEC_BY_KIND[kind].source_format
@@ -107,14 +107,14 @@ def delete_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, item_id: st
     spec: CatalogSpec = SPEC_BY_KIND[kind]
     path: Path = _file_path(kind, item_id, root)
 
-    item_found: bool = catalog_exists(conn, kind, item_id)
+    item_found: bool = is_catalog_exists(conn, kind, item_id)
     ensure(item_found, f"{kind} {item_id} not found")
 
     for ref_kind, ref_column in get_safe_tuple(REFERENCED_BY, kind):
-        if catalog_exists(conn, ref_kind, item_id, column=ref_column):
+        if is_catalog_exists(conn, ref_kind, item_id, column=ref_column):
             raise ValueError(f"{kind} {item_id} is referenced by an existing {ref_kind}")
 
-    delete(conn, spec, "id", item_id)
+    delete(conn, WriteQuery.by_id(spec, item_id))
     
     if path.exists():
         path.unlink()

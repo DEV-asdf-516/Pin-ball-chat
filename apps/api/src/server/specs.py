@@ -10,12 +10,10 @@ class CamelModel(BaseModel):
 
 
 class CatalogBody(CamelModel):
-    """character/user_profile/plot/preference create/update body의 공통 베이스.
-
-    content 파일은 정의 안 된 필드도 그대로 저장하는 라운드트립 계약이 있어서
-    (`write_catalog_file`이 dict를 통째로 파일에 쓴다), 알려지지 않은 필드를
-    버리지 않도록 `extra="allow"`를 쓴다.
-    """
+    # character/user_profile/plot/preference create/update body의 공통 베이스.
+    # content 파일은 정의 안 된 필드도 그대로 저장하는 라운드트립 계약이 있어서
+    # (`write_catalog_file`이 dict를 통째로 파일에 쓴다), 알려지지 않은 필드를
+    # 버리지 않도록 `extra="allow"`를 쓴다.
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
@@ -57,7 +55,6 @@ class PlotCreateRequest(CatalogBody):
     id: str
     type: str = "plot"
     character_id: str = Field(alias="characterId")
-    user_profile_id: str = Field(alias="userProfileId")
     source_text: str = Field(alias="sourceText")
     title: str | None = None
     genre: list[str] = Field(default_factory=list)
@@ -66,7 +63,6 @@ class PlotCreateRequest(CatalogBody):
 class PlotUpdateRequest(CatalogBody):
     type: str = "plot"
     character_id: str = Field(alias="characterId")
-    user_profile_id: str = Field(alias="userProfileId")
     source_text: str = Field(alias="sourceText")
     title: str | None = None
     genre: list[str] = Field(default_factory=list)
@@ -94,8 +90,8 @@ class GenerationParamsRequest(CamelModel):
     provider: str | None = None
     adapter_id: str | None = Field(default=None, alias="adapterId")
     max_tokens: int | None = Field(default=None, alias="maxTokens")
-    num_predict: int | None = Field(default=None, alias="numPredict")
-    num_ctx: int | None = Field(default=None, alias="numCtx")
+    num_predict: int | None = Field(default=1500, alias="numPredict")
+    num_ctx: int | None = Field(default=8192, alias="numCtx")
     compact_prompt: bool = Field(default=True, alias="compactPrompt")
 
     def to_params(self) -> GenerationParams:
@@ -111,6 +107,15 @@ class GenerationParamsRequest(CamelModel):
 
 class CreateConversationRequest(CamelModel):
     plot_id: str = Field(alias="plotId")
+    user_profile_id: str | None = Field(default=None, alias="userProfileId")
+    title: str | None = None
+
+
+class SetConversationUserProfileRequest(CamelModel):
+    user_profile_id: str = Field(alias="userProfileId")
+
+
+class SetConversationTitleRequest(CamelModel):
     title: str | None = None
 
 
@@ -125,7 +130,8 @@ class ChatRequest(GenerationParamsRequest):
                 "provider": "ollama",
                 "adapterId": None,
                 "maxTokens": 160,
-                "numCtx": 1024,
+                "numPredict": 1500,
+                "numCtx": 8192,
                 "compactPrompt": True,
             }
         },
@@ -143,7 +149,8 @@ class RegenerateRequest(GenerationParamsRequest):
                 "provider": "ollama",
                 "adapterId": None,
                 "maxTokens": 160,
-                "numCtx": 1024,
+                "numPredict": 1500,
+                "numCtx": 8192,
                 "compactPrompt": True,
             }
         },
@@ -154,13 +161,28 @@ class EditGenerationRequest(CamelModel):
     edited_text: str = Field(alias="editedText")
 
 
+class EditMessageRequest(CamelModel):
+    edited_text: str = Field(alias="editedText")
+
+
 class HealthResponse(BaseModel):
     ok: bool
+
+
+class ModelsResponse(BaseModel):
+    provider: str
+    models: list[str]
 
 
 class ConversationResponse(BaseModel):
     conversationId: str
     plotId: str
+    userProfileId: str | None = None
+
+
+class ConversationDeleteResponse(BaseModel):
+    conversationId: str
+    deleted: bool
 
 
 class SelectResponse(BaseModel):
@@ -168,9 +190,43 @@ class SelectResponse(BaseModel):
     selected: bool
 
 
+class GenerationCandidate(BaseModel):
+    generationId: str
+    content: str
+    selected: bool
+    candidateIndex: int
+
+
+class TurnGenerationsResponse(BaseModel):
+    turnId: str
+    selectedGenerationId: str | None = None
+    generations: list[GenerationCandidate]
+
+
 class EditResponse(BaseModel):
     generationId: str
     edited: bool
+
+
+class EditMessageResponse(BaseModel):
+    messageId: str
+    edited: bool
+
+
+class MessageDeleteResponse(BaseModel):
+    messageId: str
+    turnId: str
+    deleted: bool
+
+
+class BulkDeleteMessagesRequest(CamelModel):
+    message_ids: list[str] = Field(alias="messageIds")
+
+
+class BulkDeleteMessagesResponse(BaseModel):
+    messageIds: list[str]
+    turnIds: list[str]
+    deleted: bool
 
 
 class CatalogItemResponse(BaseModel):
@@ -194,7 +250,6 @@ class UserProfileResponse(CatalogItemResponse):
 class PlotResponse(CatalogItemResponse):
     title: str
     character_id: str
-    user_profile_id: str
     plot_json: str
 
 
@@ -212,10 +267,17 @@ class CatalogDeleteResponse(BaseModel):
 class ConversationDetailResponse(BaseModel):
     id: str
     plot_id: str
+    user_profile_id: str | None = None
     title: str | None = None
     active_adapter_id: str | None = None
     created_at: str
     updated_at: str
+
+
+class ConversationsPageResponse(BaseModel):
+    conversations: list[ConversationDetailResponse]
+    nextCursor: str | None = None
+    hasMore: bool
 
 
 class MessageItem(BaseModel):

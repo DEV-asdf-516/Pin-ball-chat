@@ -6,7 +6,7 @@ from domain.prompts.reader import BuiltPrompt
 
 
 class ActionType(StrEnum):
-    """user_actions 로그에 남기는 이벤트 종류."""
+    # user_actions 로그에 남기는 이벤트 종류.
     GENERATION_SHOWN = "generation_shown"
     GENERATION_REGENERATED = "generation_regenerated"
     GENERATION_SELECTED = "generation_selected"
@@ -15,8 +15,8 @@ class ActionType(StrEnum):
 
 @dataclass
 class PreparedGeneration:
-    """prepare_chat_stream/prepare_regenerate_stream이 만들어서 stream_response에 넘기는 컨텍스트.
-    message_id/created_at은 chat일 때만, current_generation_id는 regenerate일 때만 채워진다."""
+    # prepare_chat_stream/prepare_regenerate_stream이 만들어서 stream_response에 넘기는 컨텍스트.
+    # message_id/created_at은 chat일 때만, current_generation_id는 regenerate일 때만 채워진다.
     conversation_id: str
     turn_id: str
     user_message: str

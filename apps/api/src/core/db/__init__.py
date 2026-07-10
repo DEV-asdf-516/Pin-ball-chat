@@ -1,4 +1,4 @@
-from core.db.specs import Not, RawSQL, TableSpec
+from core.db.specs import Bind, CursorClause, CursorQuery, Eq, Gt, In, Lt, Ne, NotIn, ReadQuery, RawSQL, TableSpec, WriteQuery
 from core.db.sqlite import (
     DB_PATH,
     ROOT,
@@ -13,15 +13,26 @@ from core.db.sqlite import (
     init_db,
     insert,
     new_id,
+    paginate,
     select_cols,
     update,
     upsert,
 )
 
 __all__ = [
-    "Not",
+    "Bind",
+    "CursorClause",
+    "CursorQuery",
+    "Eq",
+    "Gt",
+    "In",
+    "Lt",
+    "Ne",
+    "NotIn",
+    "ReadQuery",
     "RawSQL",
     "TableSpec",
+    "WriteQuery",
     "DB_PATH",
     "ROOT",
     "TABLE_NAMES",
@@ -35,6 +46,7 @@ __all__ = [
     "init_db",
     "insert",
     "new_id",
+    "paginate",
     "select_cols",
     "update",
     "upsert",

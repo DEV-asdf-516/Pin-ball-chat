@@ -2,7 +2,7 @@ from core.db import TableSpec
 
 CONVERSATIONS = TableSpec(
     table="conversations",
-    columns=("id", "plot_id", "title", "active_adapter_id", "created_at", "updated_at"),
+    columns=("id", "plot_id", "user_profile_id", "title", "active_adapter_id", "created_at", "updated_at"),
 )
 
 CONVERSATION_SETTINGS = TableSpec(

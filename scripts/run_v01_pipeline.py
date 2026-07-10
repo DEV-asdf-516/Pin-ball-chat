@@ -46,7 +46,7 @@ async def main():
             raise SystemExit("\n".join(errors))
 
     with connect() as conn:
-        conv = create_conversation(conn, "first_meeting", "v0.1 smoke")
+        conv = create_conversation(conn, "first_meeting", "visitor", "v0.1 smoke")
 
     params = GenerationParams()
 

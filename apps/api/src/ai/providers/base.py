@@ -6,9 +6,12 @@ from util.singleton import Singleton
 
 
 class AIProvider(Singleton, ABC):
-    """모든 AI provider(local-stub/ollama/openai/anthropic/gemini)가 따르는 공통 계약."""
+    # 모든 AI provider(local-stub/ollama/openai/anthropic/gemini)가 따르는 공통 계약.
 
     name: str
 
     @abstractmethod
     def stream(self, req: GenerateRequest) -> AsyncIterator[str]: ...
+
+    async def list_models(self) -> list[str]:
+        raise NotImplementedError(f"{self.name} does not support listing models")

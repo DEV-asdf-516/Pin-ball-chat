@@ -48,8 +48,8 @@ class AnthropicProvider(AIProvider):
         payload: dict = to_anthropic_payload(req)
         client: httpx.AsyncClient = HttpClient().get()
         async with (
-            translate_http_errors(self.name),
             client.stream("POST", _ENDPOINT, json=payload, headers=self._headers(), timeout=ANTHROPIC_TIMEOUT) as res,
+            translate_http_errors(self.name),
         ):
             res: httpx.Response
             res.raise_for_status()
@@ -71,3 +71,11 @@ class AnthropicProvider(AIProvider):
 
             if not emitted_content:
                 raise EmptyOutputError("anthropic produced no content")
+
+    async def list_models(self) -> list[str]:
+        url: str = ANTHROPIC_BASE_URL.rstrip("/") + "/v1/models"
+        client: httpx.AsyncClient = HttpClient().get()
+        async with translate_http_errors(self.name):
+            res: httpx.Response = await client.get(url, headers=self._headers(), timeout=ANTHROPIC_TIMEOUT)
+            res.raise_for_status()
+            return [m["id"] for m in res.json().get("data", [])]

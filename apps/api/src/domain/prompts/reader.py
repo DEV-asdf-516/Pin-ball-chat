@@ -4,7 +4,7 @@ import sqlite3
 from dataclasses import dataclass
 
 from ai.specs import Message
-from core.db import ROOT, fetch_all, find_all, find_one
+from core.db import ROOT, RawSQL, ReadQuery, fetch_all, find_all, find_one
 from core.errors import get_or_raise
 from domain.catalog.reader import find_catalog_by_id
 from domain.catalog.specs import SPEC_BY_KIND, CharacterData, CatalogKind, PlotData, UserProfileData, parse_catalog_data
@@ -36,8 +36,8 @@ def row_json(row: sqlite3.Row | dict, key: str) -> dict:
 
 
 def extract_ooc(text: str) -> tuple[str, list[str]]:
-    """OOC 지시문을 `[OOC: ...]`/`*OOC: ...*`/줄 안 아무 데서나 나오는 맨 `OOC:` 세 형태 모두 인식해 분리한다.
-    OOC만 있던 줄은 통째로 빠지고, 다른 내용과 같은 줄에 있던 OOC는 그 부분만 잘라낸다."""
+    # OOC 지시문을 `[OOC: ...]`/`*OOC: ...*`/줄 안 아무 데서나 나오는 맨 `OOC:` 세 형태 모두 인식해 분리한다.
+    # OOC만 있던 줄은 통째로 빠지고, 다른 내용과 같은 줄에 있던 OOC는 그 부분만 잘라낸다.
     ooc: list[str] = []
 
     def replace(match: re.Match) -> str:
@@ -108,8 +108,8 @@ def render_value(value, ctx: dict, warnings: list) -> str:
 
 
 def substitute_npc_pc(text: str, ctx: dict) -> str:
-    """OOC 등 사용자 원문에 평문으로 등장하는 NPC/PC 표기를 실제 캐릭터명으로 치환한다.
-    (NPC)/{NPC}/(PC)/{PC}처럼 괄호로 감싼 표기는 괄호까지 통째로, 맨 단어는 단어 경계로 치환한다."""
+    # OOC 등 사용자 원문에 평문으로 등장하는 NPC/PC 표기를 실제 캐릭터명으로 치환한다.
+    # (NPC)/{NPC}/(PC)/{PC}처럼 괄호로 감싼 표기는 괄호까지 통째로, 맨 단어는 단어 경계로 치환한다.
     text = re.sub(r"[(\{]NPC[)\}]|(?<![A-Za-z0-9])NPC(?![A-Za-z0-9])", ctx["char"], text)
     text = re.sub(r"[(\{]PC[)\}]|(?<![A-Za-z0-9])PC(?![A-Za-z0-9])", ctx["user"], text)
     return text
@@ -124,7 +124,7 @@ def source_for(payload: dict, source_text: str | None) -> str:
 
 
 def resolve_prompt_context(conn: sqlite3.Connection, conversation_id: str) -> tuple[dict, dict, dict, dict]:
-    conv_row: dict | None = find_one(conn, CONVERSATIONS, conversation_id)
+    conv_row: dict | None = find_one(conn, ReadQuery.by_id(CONVERSATIONS, conversation_id))
     conv: dict = get_or_raise(conv_row, "conversation not found")
 
     plot_row: dict | None = find_catalog_by_id(conn, CatalogKind.PLOT, conv["plot_id"])
@@ -133,8 +133,8 @@ def resolve_prompt_context(conn: sqlite3.Connection, conversation_id: str) -> tu
     char_row: dict | None = find_catalog_by_id(conn, CatalogKind.CHARACTER, plot["character_id"])
     char: dict = get_or_raise(char_row, "plot character missing")
 
-    user_row: dict | None = find_catalog_by_id(conn, CatalogKind.USER_PROFILE, plot["user_profile_id"])
-    user: dict = get_or_raise(user_row, "plot user_profile missing")
+    user_row: dict | None = find_catalog_by_id(conn, CatalogKind.USER_PROFILE, conv["user_profile_id"])
+    user: dict = get_or_raise(user_row, "conversation has no user_profile set (select one before chatting)")
 
     return conv, plot, char, user
 
@@ -142,7 +142,7 @@ def resolve_prompt_context(conn: sqlite3.Connection, conversation_id: str) -> tu
 def merged_preferences(conn: sqlite3.Connection, plot: dict, conversation_id: str) -> tuple[dict, list]:
     plot_data: PlotData = parse_catalog_data(CatalogKind.PLOT, row_json(plot, "plot_json"))
     genres: list[str] = plot_data.genre
-    pref_rows: list[dict] = find_all(conn, SPEC_BY_KIND[CatalogKind.PREFERENCE])
+    pref_rows: list[dict] = find_all(conn, ReadQuery(SPEC_BY_KIND[CatalogKind.PREFERENCE]))
     chosen: list[tuple] = []
     rank: dict = {"global": 0, "genre": 1, "character": 2, "plot": 3, "conversation": 4}
     
@@ -185,8 +185,8 @@ def snapshot_text(system: str, messages: list[Message]) -> str:
 
 
 def build_prompt(conn: sqlite3.Connection, conversation_id: str, user_message: str) -> BuiltPrompt:
-    """system_prompt.json에 정의된 관찰자 프롬프트 골격 위에, 이 conversation의 캐릭터/유저/플롯 데이터를 채워 넣는다.
-    TODO: preferences.json을 로어북처럼 쓰는 방식으로 나중에 다시 연결한다."""
+    # system_prompt.json에 정의된 관찰자 프롬프트 골격 위에, 이 conversation의 캐릭터/유저/플롯 데이터를 채워 넣는다.
+    # TODO: preferences.json을 로어북처럼 쓰는 방식으로 나중에 다시 연결한다.
     
     _, plot, char, user = resolve_prompt_context(conn, conversation_id)
     char_json: dict = row_json(char, "profile_json")
@@ -208,15 +208,19 @@ def build_prompt(conn: sqlite3.Connection, conversation_id: str, user_message: s
 
     recent: list[sqlite3.Row] = fetch_all(
         conn,
-        """
-        SELECT m.role, m.content
+        RawSQL("""
+        SELECT 
+            m.role, 
+            m.content
         FROM messages m
-        LEFT JOIN generations g ON m.generation_id = g.id
-        WHERE m.conversation_id=? AND (m.generation_id IS NULL OR g.rejected=0)
+        LEFT JOIN generations g 
+        ON m.generation_id = g.id
+        WHERE m.conversation_id=:conversation_id
+        AND (m.generation_id IS NULL OR g.rejected=0)
         ORDER BY m.rowid DESC
         LIMIT 20
-        """,
-        (conversation_id,),
+        """),
+        {"conversation_id": conversation_id},
     )
 
     story_body: str = "\n\n".join([
