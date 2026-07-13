@@ -243,6 +243,7 @@ function bindChat() {
   bindComposerResize();
   let longPressTimer = null;
   let longPressOpened = false;
+  let lastComposerResetTap = 0;
   $("chatBackBtn").onclick = () => showScreen(state.conversation?.fromList ? "conversations" : "detail");
   $("chatUserProfileBtn").onclick = () => openUserProfileSheet();
   $("composer").onclick = (event) => {
@@ -295,7 +296,18 @@ function bindChat() {
       openMessageMenu(message);
     }, 520);
   };
-  $("messages").onpointerup = () => clearTimeout(longPressTimer);
+  $("messages").onpointerup = (event) => {
+    clearTimeout(longPressTimer);
+    if (longPressOpened || event.target.closest("button, .action-menu")) return;
+    const now = Date.now();
+    if (state.composerHeight && now - lastComposerResetTap < 320) {
+      event.preventDefault();
+      resetComposerSize();
+      lastComposerResetTap = 0;
+      return;
+    }
+    lastComposerResetTap = now;
+  };
   $("messages").onpointercancel = () => clearTimeout(longPressTimer);
   $("messages").onpointerleave = () => clearTimeout(longPressTimer);
   $("messages").oncontextmenu = (event) => {
@@ -489,11 +501,12 @@ function bindComposerResize() {
     event.preventDefault();
     const startY = event.clientY;
     const startMax = state.composerMaxHeight;
+    const minHeight = composerMinHeight(input);
 
     const onMove = (moveEvent) => {
       moveEvent.preventDefault();
       const next = startMax + startY - moveEvent.clientY;
-      state.composerHeight = Math.max(136, Math.min(Math.round(window.innerHeight - 120), next));
+      state.composerHeight = Math.max(minHeight, Math.min(Math.round(window.innerHeight - 120), next));
       state.composerMaxHeight = state.composerHeight;
       resizeComposerInput();
     };
@@ -506,12 +519,22 @@ function bindComposerResize() {
     window.addEventListener("pointerup", onEnd);
     window.addEventListener("pointercancel", onEnd);
   };
-  handle.ondblclick = () => {
-    state.composerHeight = null;
-    state.composerMaxHeight = 136;
-    input.style.height = "";
-    resizeComposerInput();
-  };
+  handle.ondblclick = resetComposerSize;
+}
+
+function composerMinHeight(input) {
+  const previousHeight = input.style.height;
+  input.style.height = "";
+  const height = Math.ceil(input.getBoundingClientRect().height || input.scrollHeight || 44);
+  input.style.height = previousHeight;
+  return height;
+}
+
+function resetComposerSize() {
+  state.composerHeight = null;
+  state.composerMaxHeight = 136;
+  $("messageInput").style.height = "";
+  resizeComposerInput();
 }
 
 function nearBottom(node) {
