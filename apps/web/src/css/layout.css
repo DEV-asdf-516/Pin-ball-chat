@@ -1,0 +1,180 @@
+.shell {
+  width: min(100vw, 430px);
+  min-width: min(100vw, 320px);
+  height: 100dvh;
+  background: var(--shell-bg);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .16);
+}
+
+@media (max-width: 430px) {
+  .shell {
+    border: 0;
+    box-shadow: none;
+  }
+}
+
+header {
+  min-height: calc(56px + env(safe-area-inset-top));
+  padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  background: color-mix(in srgb, var(--shell-bg) 92%, transparent);
+  backdrop-filter: blur(14px);
+  z-index: 2;
+}
+
+.chat-header {
+  min-height: calc(56px + env(safe-area-inset-top));
+  padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  background: color-mix(in srgb, var(--shell-bg) 92%, transparent);
+  backdrop-filter: blur(14px);
+  z-index: 2;
+}
+
+.header-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+header .icon-btn,
+.chat-header .icon-btn {
+  background: transparent;
+  color: var(--text-2);
+}
+
+main {
+  grid-row: 2;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.screen {
+  height: 100%;
+  display: none;
+  min-height: 0;
+  position: relative;
+}
+
+.screen.active {
+  display: grid;
+}
+
+#plotsScreen,
+#plotCreateScreen,
+#plotManageScreen,
+#conversationsScreen,
+#detailScreen {
+  grid-template-rows: auto 1fr auto;
+}
+
+#chatScreen {
+  grid-template-rows: auto 1fr auto;
+}
+
+.toolbar {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  gap: 10px;
+  background: var(--shell-bg);
+}
+
+.list,
+.detail,
+.messages {
+  overflow: auto;
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+
+.list {
+  padding: 12px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+#plotList {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.bottom {
+  padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--shell-bg);
+}
+
+.detail {
+  padding: 16px 12px;
+}
+
+.messages {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.composer {
+  min-height: 0;
+  padding: 5px 12px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--shell-bg);
+  display: grid;
+  grid-template-columns: 1fr 44px;
+  grid-template-rows: 12px auto;
+  row-gap: 4px;
+  column-gap: 8px;
+  align-items: end;
+}
+
+.composer.busy {
+  opacity: .78;
+}
+
+.composer.profile-required {
+  opacity: .64;
+}
+
+.composer.profile-required .composer-handle {
+  cursor: default;
+}
+
+.composer.editing {
+  border-top-color: var(--accent);
+}
+
+.composer.editing .composer-handle span {
+  background: var(--accent);
+}
+
+.composer-handle {
+  grid-column: 1 / -1;
+  height: 12px;
+  display: grid;
+  place-items: center;
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.composer-handle span {
+  width: 42px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--border);
+}

@@ -1,0 +1,46 @@
+:root {
+  color-scheme: light dark;
+  --app-bg: #dfe6ea;
+  --shell-bg: #f8faf9;
+  --surface: #ffffff;
+  --surface-raised: #f1f4f3;
+  --border: #d8dfdc;
+  --text: #17201d;
+  --text-2: #52605b;
+  --muted: #7a8782;
+  --accent: #24715e;
+  --accent-2: #dff2eb;
+  --accent-text: #ffffff;
+  --danger: #b33434;
+  --user-bubble: var(--accent);
+  --user-text: var(--accent-text);
+  --assistant-bubble: var(--surface);
+  --assistant-bubble-border: var(--border);
+  --assistant-text: #17201d;
+  --input-bg: #ffffff;
+  --overlay: rgba(0, 0, 0, .32);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --app-bg: #101513;
+  --shell-bg: #151b19;
+  --surface: #1d2421;
+  --surface-raised: #25302c;
+  --border: #35413d;
+  --text: #eef5f1;
+  --text-2: #b5c2bd;
+  --muted: #84918c;
+  --accent: #63c2a2;
+  --accent-2: #18342b;
+  --accent-text: #07110d;
+  --danger: #ff7a7a;
+  --user-bubble: var(--accent);
+  --user-text: var(--accent-text);
+  --assistant-bubble: var(--surface);
+  --assistant-bubble-border: var(--border);
+  --assistant-text: #eef5f1;
+  --input-bg: #111715;
+  --overlay: rgba(0, 0, 0, .58);
+}

@@ -1,0 +1,80 @@
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--app-bg);
+  color: var(--text);
+  display: grid;
+  place-items: center;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 8px;
+  min-height: 40px;
+  padding: 0 12px;
+  background: var(--surface-raised);
+  color: var(--text);
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+input:disabled,
+textarea:disabled,
+select:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+input,
+textarea,
+select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text);
+  outline: none;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--accent);
+}
+
+input,
+select {
+  min-height: 40px;
+  padding: 0 11px;
+}
+
+select {
+  padding-right: 36px;
+}
+
+textarea {
+  resize: none;
+  max-height: var(--composer-max-height, 136px);
+  line-height: 1.45;
+  padding: 10px 11px;
+  overflow-y: auto;
+}
