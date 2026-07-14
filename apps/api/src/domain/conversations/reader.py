@@ -3,6 +3,23 @@ import sqlite3
 from core.db import CursorClause, CursorQuery, RawSQL, ReadQuery, exists, find_one, paginate
 from core.errors import ensure, get_or_raise
 from domain.conversations.specs import CONVERSATION_SETTINGS, CONVERSATIONS
+from util.string_util import join_columns
+
+
+def active_messages_sql(columns: tuple[str, ...], order: str = "DESC", extra_where: str = "", tail: str = "") -> str:
+    # 재생성으로 rejected된 assistant 후보를 뺀, generations.rejected=0인 "active" 메시지 조회 쿼리를 조립한다.
+    # list_messages/build_prompt의 recent/writer의 _active_messages가 컬럼·정렬 방향·커서 조건만 다르게 넣어 공유한다.
+    return f"""
+    SELECT {join_columns(columns)}
+    FROM messages m
+    LEFT JOIN generations g
+    ON m.generation_id = g.id
+    WHERE m.conversation_id=:conversation_id
+    AND (m.generation_id IS NULL OR g.rejected=0)
+    {extra_where}
+    ORDER BY m.rowid {order}
+    {tail}
+    """
 
 
 def get_conversation(conn: sqlite3.Connection, conversation_id: str) -> dict:
@@ -54,25 +71,20 @@ def list_messages(conn: sqlite3.Connection, conversation_id: str, before: int | 
     }
 
     cursor_query = CursorQuery(
-        query=RawSQL(f"""
-        SELECT
-          m.rowid,
-          m.id,
-          m.conversation_id,
-          m.role,
-          m.content,
-          m.turn_id,
-          m.generation_id,
-          m.created_at
-        FROM messages m
-        LEFT JOIN generations g
-        ON m.generation_id = g.id
-        WHERE m.conversation_id=:conversation_id
-        AND (m.generation_id IS NULL OR g.rejected=0)
-        {CursorQuery.clause("m.rowid", before, prefix=CursorClause.AND)}
-        ORDER BY m.rowid DESC
-        LIMIT :limit
-        """),
+        query=RawSQL(
+            active_messages_sql(
+                ("m.rowid", 
+                 "m.id", 
+                 "m.conversation_id", 
+                 "m.role", 
+                 "m.content", 
+                 "m.turn_id", 
+                 "m.generation_id", 
+                 "m.created_at"
+                 ),
+                extra_where=CursorQuery.clause("m.rowid", before, prefix=CursorClause.AND),
+                tail="LIMIT :limit",
+        )),
         params=params,
         limit=limit,
     )

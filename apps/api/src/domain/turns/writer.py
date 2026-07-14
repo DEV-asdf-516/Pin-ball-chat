@@ -7,7 +7,7 @@ from ai.registry import runtime_params
 from ai.specs import GenerateRequest
 from core.db import Bind, In, Ne, ReadQuery, RawSQL, WriteQuery, delete, fetch_one, find_all, find_one, insert, new_id, select_cols, update
 from core.errors import ensure, get_or_raise
-from domain.prompts.reader import BuiltPrompt, build_prompt, snapshot_text
+from domain.prompts.system.reader import BuiltPrompt, build_prompt, snapshot_text
 from domain.specs import GenerationParams
 from domain.turns.specs import GENERATION_EDITS, GENERATIONS, MESSAGES, TURNS, USER_ACTIONS, ActionType, PreparedGeneration
 from util.time_util import utc_now_string
@@ -214,7 +214,7 @@ def select_generation(conn: sqlite3.Connection, generation_id: str) -> dict:
     return {
         "generationId": generation_id, 
         "selected": True
-        }
+    }
 
 
 def edit_generation(conn: sqlite3.Connection, generation_id: str, edited_text: str) -> dict:

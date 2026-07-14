@@ -1,17 +1,22 @@
 from fastapi import APIRouter
 
-from domain.catalog.reader import find_all_by_kind
+from domain.catalog.reader import list_catalog_by_kind
 from domain.catalog.specs import CatalogKind
 from domain.catalog.writer import create_catalog_item, delete_catalog_item, update_catalog_item
 from server.dependencies import DbConn
-from server.specs import CatalogDeleteResponse, PreferenceCreateRequest, PreferenceResponse, PreferenceUpdateRequest
+from server.specs import CatalogDeleteResponse, PreferenceCreateRequest, PreferenceProfilesPageResponse, PreferenceResponse, PreferenceUpdateRequest
 
 router = APIRouter()
 
 
-@router.get("/api/preference-profiles", response_model=list[PreferenceResponse])
-def get_preference_profiles(conn: DbConn):
-    return find_all_by_kind(conn, CatalogKind.PREFERENCE)
+@router.get("/api/preference-profiles", response_model=PreferenceProfilesPageResponse)
+def get_preference_profiles(conn: DbConn, before: int | None = None, limit: int = 100):
+    page = list_catalog_by_kind(conn, CatalogKind.PREFERENCE, before, limit)
+    return {
+        "preference_profiles": page["items"], 
+        "nextCursor": page["nextCursor"], 
+        "hasMore": page["hasMore"]
+        }
 
 
 @router.post("/api/preference-profiles", response_model=PreferenceResponse)

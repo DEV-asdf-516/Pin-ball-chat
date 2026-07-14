@@ -18,7 +18,7 @@ from domain.conversations.writer import create_conversation
 from domain.specs import GenerationParams
 from domain.turns.writer import edit_generation, prepare_chat_stream, prepare_regenerate_stream, select_generation
 from domain.turns.streaming import stream_response
-from domain.prompts.reader import build_prompt
+from domain.prompts.system.reader import build_prompt
 
 
 async def _drain_stream(prepared: dict, params: GenerationParams) -> dict:

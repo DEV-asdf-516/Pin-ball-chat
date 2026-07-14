@@ -14,16 +14,8 @@ from ai.providers.base import AIProvider
 from util.safe_util import get_safe_dict
 
 
-def is_qwen3_model(model: str) -> bool:
-    return model.lower().startswith("qwen3")
-
-
 def _is_bad_gateway(exc: httpx.HTTPStatusError, body: str) -> bool:
     return exc.response.status_code in (400, 404) or "model" in body.lower()
-
-
-def _is_qwen3_response_empty(model: str, has_content) -> bool:
-    return is_qwen3_model(model) and not has_content
 
 
 def _base_url() -> str:
@@ -77,28 +69,30 @@ class OllamaProvider(AIProvider):
             async for line in res.aiter_lines():
                 if not line.strip():
                     continue
-                
+
                 chunk: dict = json.loads(line)
                 content: str | None = get_safe_dict(chunk, "message").get("content")
-                
+
                 if content:
                     emitted_content = True
                     yield content
-                
-                if not chunk.get("done"):
-                    continue
-                
-                if _is_qwen3_response_empty(req.model, emitted_content):
-                    if not retried:
-                        fallback_tokens: int = max(req.num_predict or DEFAULT_NUM_PREDICT, 256)
-                        async for token in self._stream_internal(replace(req, num_predict=fallback_tokens), True):
-                            yield token
-                        return
-                    raise EmptyOutputError("qwen3 produced no content with think:false")
 
-                if not emitted_content:
-                    raise EmptyOutputError("ollama produced no content")
+                if chunk.get("done"):
+                    break
+
+            if emitted_content:
                 return
+
+            # 빈 응답: "done":true인데 content가 하나도 없었거나, done 청크 자체 없이 스트림이 끝난 경우 둘 다 여기로 온다.
+            # 일부 모델(gemma4 등)은 think:false로도 내부 사고과정을 완전히 억제하지 못해서, 그 잔여 사고과정이
+            # num_predict 예산을 다 먹어버리면 이렇게 된다 — 모델 구분 없이 예산을 키워 한 번만 재시도한다.
+            if not retried:
+                fallback_tokens: int = max((req.num_predict or DEFAULT_NUM_PREDICT) * 2, 512)
+                async for token in self._stream_internal(replace(req, num_predict=fallback_tokens), True):
+                    yield token
+                return
+
+            raise EmptyOutputError("ollama produced no content")
 
     async def list_models(self) -> list[str]:
         url: str = _base_url().rstrip("/") + "/api/tags"

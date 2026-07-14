@@ -1,18 +1,23 @@
 from fastapi import APIRouter
 
-from domain.catalog.reader import find_all_by_kind
+from domain.catalog.reader import list_catalog_by_kind
 from domain.catalog.specs import CatalogKind
 from domain.user_profiles import get_user_profile
 from domain.catalog.writer import create_catalog_item, delete_catalog_item, update_catalog_item
 from server.dependencies import DbConn
-from server.specs import CatalogDeleteResponse, UserProfileCreateRequest, UserProfileResponse, UserProfileUpdateRequest
+from server.specs import CatalogDeleteResponse, UserProfileCreateRequest, UserProfileResponse, UserProfilesPageResponse, UserProfileUpdateRequest
 
 router = APIRouter()
 
 
-@router.get("/api/user-profiles", response_model=list[UserProfileResponse])
-def get_user_profiles(conn: DbConn):
-    return find_all_by_kind(conn, CatalogKind.USER_PROFILE)
+@router.get("/api/user-profiles", response_model=UserProfilesPageResponse)
+def get_user_profiles(conn: DbConn, before: int | None = None, limit: int = 100):
+    page = list_catalog_by_kind(conn, CatalogKind.USER_PROFILE, before, limit)
+    return {
+        "user_profiles": page["items"],
+        "nextCursor": page["nextCursor"],
+        "hasMore": page["hasMore"]
+    }
 
 
 @router.get("/api/user-profiles/{user_profile_id}", response_model=UserProfileResponse)

@@ -1,18 +1,23 @@
 from fastapi import APIRouter
 
 from domain.characters import get_character
-from domain.catalog.reader import find_all_by_kind
+from domain.catalog.reader import list_catalog_by_kind
 from domain.catalog.specs import CatalogKind
 from domain.catalog.writer import create_catalog_item, delete_catalog_item, update_catalog_item
 from server.dependencies import DbConn
-from server.specs import CharacterCreateRequest, CharacterResponse, CharacterUpdateRequest, CatalogDeleteResponse
+from server.specs import CharacterCreateRequest, CharacterResponse, CharactersPageResponse, CharacterUpdateRequest, CatalogDeleteResponse
 
 router = APIRouter()
 
 
-@router.get("/api/characters", response_model=list[CharacterResponse])
-def get_characters(conn: DbConn):
-    return find_all_by_kind(conn, CatalogKind.CHARACTER)
+@router.get("/api/characters", response_model=CharactersPageResponse)
+def get_characters(conn: DbConn, before: int | None = None, limit: int = 100):
+    page = list_catalog_by_kind(conn, CatalogKind.CHARACTER, before, limit)
+    return {
+        "characters": page["items"], 
+        "nextCursor": page["nextCursor"], 
+        "hasMore": page["hasMore"]
+     }
 
 
 @router.get("/api/characters/{character_id}", response_model=CharacterResponse)

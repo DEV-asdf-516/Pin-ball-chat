@@ -9,6 +9,11 @@ class CamelModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class CursorPageResponse(BaseModel):
+    nextCursor: str | None = None
+    hasMore: bool
+
+
 class CatalogBody(CamelModel):
     # character/user_profile/plot/preference create/update body의 공통 베이스.
     # content 파일은 정의 안 된 필드도 그대로 저장하는 라운드트립 계약이 있어서
@@ -259,6 +264,22 @@ class PreferenceResponse(CatalogItemResponse):
     profile_json: str
 
 
+class CharactersPageResponse(CursorPageResponse):
+    characters: list[CharacterResponse]
+
+
+class UserProfilesPageResponse(CursorPageResponse):
+    user_profiles: list[UserProfileResponse]
+
+
+class PlotsPageResponse(CursorPageResponse):
+    plots: list[PlotResponse]
+
+
+class PreferenceProfilesPageResponse(CursorPageResponse):
+    preference_profiles: list[PreferenceResponse]
+
+
 class CatalogDeleteResponse(BaseModel):
     id: str
     deleted: bool
@@ -274,10 +295,8 @@ class ConversationDetailResponse(BaseModel):
     updated_at: str
 
 
-class ConversationsPageResponse(BaseModel):
+class ConversationsPageResponse(CursorPageResponse):
     conversations: list[ConversationDetailResponse]
-    nextCursor: str | None = None
-    hasMore: bool
 
 
 class MessageItem(BaseModel):
@@ -290,10 +309,8 @@ class MessageItem(BaseModel):
     created_at: str
 
 
-class MessagesPageResponse(BaseModel):
+class MessagesPageResponse(CursorPageResponse):
     messages: list[MessageItem]
-    nextCursor: str | None = None
-    hasMore: bool
 
 
 class ConversationSettingsResponse(BaseModel):

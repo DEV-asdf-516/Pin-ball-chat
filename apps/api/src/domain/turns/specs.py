@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from core.db import TableSpec
-from domain.prompts.reader import BuiltPrompt
+from domain.prompts.system.reader import BuiltPrompt
 
 
 class ActionType(StrEnum):

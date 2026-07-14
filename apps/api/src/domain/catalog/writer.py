@@ -68,23 +68,30 @@ def create_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, data: dict,
     source_text: str = write_catalog_file(path, data, source_format)
     catalog: LoadedCatalog = LoadedCatalog(data=data, source_text=source_text, source_format=source_format)
 
-    upsert_catalog_item(conn, kind, payload, catalog)
+    try:
+        upsert_catalog_item(conn, kind, payload, catalog)
+    except Exception:
+        # DB 반영이 실패하면 방금 만든 파일도 지워서 파일/DB가 어긋나지 않게 한다.
+        path.unlink(missing_ok=True)
+        raise
 
     return find_catalog_by_id(conn, kind, row_id)
 
 
 def update_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, item_id: str, data: dict, root: Path = ROOT) -> dict:
     _validate_id(item_id)
-    
+
     data = {**data, "id": item_id}
-    
+
     if data.get("type", kind) != kind:
         raise ValueError(f"type must be {kind}")
-    
+
     path: Path = _file_path(kind, item_id, root)
-    
+
     item_found: bool = path.exists()
     ensure(item_found, f"{kind} {item_id} not found")
+
+    previous_text: str = path.read_text(encoding="utf-8")
 
     payload: CatalogPayload = parse_catalog_data(kind, data)
 
@@ -97,7 +104,12 @@ def update_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, item_id: st
     source_text: str = write_catalog_file(path, data, source_format)
     catalog: LoadedCatalog = LoadedCatalog(data=data, source_text=source_text, source_format=source_format)
 
-    upsert_catalog_item(conn, kind, payload, catalog)
+    try:
+        upsert_catalog_item(conn, kind, payload, catalog)
+    except Exception:
+        # DB 반영이 실패하면 파일을 수정 전 내용으로 되돌린다.
+        path.write_text(previous_text, encoding="utf-8")
+        raise
 
     return find_catalog_by_id(conn, kind, item_id)
 

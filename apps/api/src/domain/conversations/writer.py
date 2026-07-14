@@ -27,6 +27,8 @@ def create_conversation(conn: sqlite3.Connection, plot_id: str, user_profile_id:
         "user_profile_id": user_profile_id,
         "title": title,
         "active_adapter_id": None,
+        "summary_text": None,
+        "summary_through_rowid": 0,
         "created_at": ts,
         "updated_at": ts,
     }))

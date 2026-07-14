@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 from fastapi.responses import StreamingResponse
 
+from domain.prompts.summary.writer import maybe_update_summary
 from domain.turns.reader import list_turn_generations
 from domain.turns.writer import delete_message, delete_messages, edit_generation, edit_user_message, prepare_chat_stream, prepare_regenerate_stream, select_generation
 from domain.turns.streaming import stream_response
@@ -14,14 +15,18 @@ router = APIRouter()
 @router.post("/api/chat/stream", description="Returns Server-Sent Events. Use curl -N or browser fetch streaming client.")
 def post_chat_stream(body: ChatRequest, conn: DbConn):
     prepared = prepare_chat_stream(conn, body.conversation_id, body.message)
-    return StreamingResponse(stream_response(prepared, body.to_params()), media_type="text/event-stream")
+    background_tasks = BackgroundTasks()
+    background_tasks.add_task(maybe_update_summary, prepared.conversation_id)
+    return StreamingResponse(stream_response(prepared, body.to_params()), media_type="text/event-stream", background=background_tasks)
 
 
 @router.post("/api/turns/{turn_id}/regenerate/stream", description="Returns Server-Sent Events. Use curl -N or browser fetch streaming client.")
 def post_regenerate_stream(turn_id: str, conn: DbConn, body: RegenerateRequest | None = None):
     body = body or RegenerateRequest()
     prepared = prepare_regenerate_stream(conn, turn_id)
-    return StreamingResponse(stream_response(prepared, body.to_params()), media_type="text/event-stream")
+    background_tasks = BackgroundTasks()
+    background_tasks.add_task(maybe_update_summary, prepared.conversation_id)
+    return StreamingResponse(stream_response(prepared, body.to_params()), media_type="text/event-stream", background=background_tasks)
 
 
 @router.get("/api/turns/{turn_id}/generations", response_model=TurnGenerationsResponse)

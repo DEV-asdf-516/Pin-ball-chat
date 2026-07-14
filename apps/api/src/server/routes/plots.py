@@ -1,18 +1,23 @@
 from fastapi import APIRouter
 
-from domain.catalog.reader import find_all_by_kind
+from domain.catalog.reader import list_catalog_by_kind
 from domain.catalog.specs import CatalogKind
 from domain.plots import get_plot
 from domain.catalog.writer import create_catalog_item, delete_catalog_item, update_catalog_item
 from server.dependencies import DbConn
-from server.specs import CatalogDeleteResponse, PlotCreateRequest, PlotResponse, PlotUpdateRequest
+from server.specs import CatalogDeleteResponse, PlotCreateRequest, PlotResponse, PlotsPageResponse, PlotUpdateRequest
 
 router = APIRouter()
 
 
-@router.get("/api/plots", response_model=list[PlotResponse])
-def get_plots(conn: DbConn):
-    return find_all_by_kind(conn, CatalogKind.PLOT)
+@router.get("/api/plots", response_model=PlotsPageResponse)
+def get_plots(conn: DbConn, before: int | None = None, limit: int = 100):
+    page = list_catalog_by_kind(conn, CatalogKind.PLOT, before, limit)
+    return {
+        "plots": page["items"], 
+        "nextCursor": page["nextCursor"], 
+        "hasMore": page["hasMore"]
+    }
 
 
 @router.get("/api/plots/{plot_id}", response_model=PlotResponse)
