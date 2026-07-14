@@ -964,7 +964,29 @@
 }
 
 .plot-manage-edit {
+  height: 100%;
+  min-height: 0;
   padding-top: 4px;
+  align-content: stretch;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+#plotManageEditMount {
+  height: 100%;
+  min-height: 0;
+}
+
+.plot-manage-edit .field:has(#plotManageSource) {
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: stretch;
+}
+
+#plotManageSource {
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
 }
 
 .settings-section {
