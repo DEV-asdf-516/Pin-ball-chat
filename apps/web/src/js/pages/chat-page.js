@@ -13,9 +13,6 @@ export function chatPage() {
       el("div", { className: "chat-head-title" }, [
         el("strong", { id: "chatHeaderTitle", text: "채팅" }),
         el("span", { id: "chatHeaderSub" }),
-        el("div", { id: "chatHeaderTitleMenu", className: "dropdown" }, [
-          el("button", { type: "button", text: "제목 변경", dataset: { editCurrentConversationTitle: "true" } }),
-        ]),
       ]),
       el("div", { className: "header-actions" }, [
         el("button", {

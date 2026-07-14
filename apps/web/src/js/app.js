@@ -10,6 +10,8 @@ import { applyTheme, bindSettings, loadConversationSettings, loadSettings } from
 import { state } from "./state.js";
 import { mountApp, showScreen } from "./ui.js";
 
+let cancelInlineTitleEdit = null;
+
 async function startChat() {
   try {
     const title = state.selectedPlot.title || state.selectedPlot.id;
@@ -79,14 +81,14 @@ function bindCatalog() {
     if (nearBottom($("conversationList"))) await conversations.loadMoreConversations();
   };
   let titleEditTimer = null;
-  let titleMenuOpened = false;
+  let titleEditOpened = false;
   $("conversationList").onpointerdown = (event) => {
     if (event.target.closest(".title-inline-input")) return;
     const target = event.target.closest("[data-conversation-title-menu]");
     if (!target || event.target.closest("button")) return;
     titleEditTimer = setTimeout(() => {
-      titleMenuOpened = true;
-      openConversationCardMenu(target);
+      titleEditOpened = true;
+      editConversationTitleById(target.dataset.conversationTitleMenu, target.textContent.trim(), target);
     }, 520);
   };
   $("conversationList").onpointerup = () => clearTimeout(titleEditTimer);
@@ -96,19 +98,13 @@ function bindCatalog() {
     const target = event.target.closest("[data-conversation-title-menu]");
     if (!target) return;
     event.preventDefault();
-    openConversationCardMenu(target);
+    editConversationTitleById(target.dataset.conversationTitleMenu, target.textContent.trim(), target);
   };
   $("conversationList").onclick = async (event) => {
     if (event.target.closest(".title-inline-input")) return;
-    if (titleMenuOpened) {
-      titleMenuOpened = false;
+    if (titleEditOpened) {
+      titleEditOpened = false;
       event.preventDefault();
-      return;
-    }
-    const titleTarget = event.target.closest("[data-conversation-title-menu]");
-    if (titleTarget) {
-      event.stopPropagation();
-      openConversationCardMenu(titleTarget);
       return;
     }
     const menuBtn = event.target.closest("button[data-conversation-menu]");
@@ -244,7 +240,10 @@ function bindChat() {
   let longPressTimer = null;
   let longPressOpened = false;
   let lastComposerResetTap = 0;
-  $("chatBackBtn").onclick = () => showScreen(state.conversation?.fromList ? "conversations" : "detail");
+  $("chatBackBtn").onclick = () => {
+    if (cancelActiveTitleEdit()) return;
+    showScreen(state.conversation?.fromList ? "conversations" : "detail");
+  };
   $("chatUserProfileBtn").onclick = () => openUserProfileSheet();
   $("composer").onclick = (event) => {
     if (!needsUserProfileSelection()) return;
@@ -373,15 +372,15 @@ function bindChat() {
 
 function bindHeaderTitleEdit() {
   let timer = null;
-  let titleMenuOpened = false;
+  let titleEditOpened = false;
   const title = document.querySelector(".chat-head-title");
   const clear = () => clearTimeout(timer);
   title.onpointerdown = (event) => {
     if (event.target.closest(".title-inline-input")) return;
     if (state.route !== "chat" || !state.conversation?.conversationId) return;
     timer = setTimeout(() => {
-      titleMenuOpened = true;
-      openHeaderTitleMenu();
+      titleEditOpened = true;
+      editConversationTitle($("chatHeaderTitle"));
     }, 520);
   };
   title.onpointerup = clear;
@@ -390,23 +389,14 @@ function bindHeaderTitleEdit() {
   title.oncontextmenu = (event) => {
     if (state.route !== "chat") return;
     event.preventDefault();
-    openHeaderTitleMenu();
+    editConversationTitle($("chatHeaderTitle"));
   };
   title.onclick = (event) => {
-    const editBtn = event.target.closest("button[data-edit-current-conversation-title]");
-    if (editBtn) {
-      event.stopPropagation();
-      editConversationTitle($("chatHeaderTitle"));
-      return;
-    }
     if (event.target.closest(".dropdown, .title-inline-input")) return;
-    if (titleMenuOpened) {
-      titleMenuOpened = false;
+    if (titleEditOpened) {
+      titleEditOpened = false;
       event.preventDefault();
-      return;
     }
-    if (state.route !== "chat" || !state.conversation?.conversationId) return;
-    openHeaderTitleMenu();
   };
 }
 
@@ -415,12 +405,6 @@ function openConversationCardMenu(target) {
   const menu = card?.querySelector(".dropdown");
   const trigger = card?.querySelector("button[data-conversation-menu]") || target;
   toggleDropdown(menu, trigger);
-}
-
-function openHeaderTitleMenu() {
-  const menu = $("chatHeaderTitleMenu");
-  toggleDropdown(menu, $("chatHeaderTitle"));
-  if (menu?.classList.contains("open")) menu.style.minWidth = "104px";
 }
 
 function editConversationTitle(target = $("chatHeaderTitle")) {
@@ -440,6 +424,7 @@ function editConversationTitleById(conversationId, current = "", target = null) 
 
 function startInlineTitleEdit(conversationId, current, target) {
   if (!target || target.querySelector(".title-inline-input")) return;
+  cancelActiveTitleEdit();
   closeDropdowns();
   const original = target.textContent;
   const input = document.createElement("input");
@@ -454,6 +439,7 @@ function startInlineTitleEdit(conversationId, current, target) {
   const finish = async (save) => {
     if (done) return;
     done = true;
+    cancelInlineTitleEdit = null;
     const title = input.value.trim();
     if (!save || !title || title === current) {
       target.textContent = original;
@@ -470,12 +456,20 @@ function startInlineTitleEdit(conversationId, current, target) {
       toast(err.message);
     }
   };
+  const cancel = () => finish(false);
+  cancelInlineTitleEdit = cancel;
 
   input.onkeydown = (event) => {
     if (event.key === "Enter") finish(true);
     if (event.key === "Escape") finish(false);
   };
   input.onblur = () => finish(true);
+}
+
+function cancelActiveTitleEdit() {
+  if (!cancelInlineTitleEdit) return false;
+  cancelInlineTitleEdit();
+  return true;
 }
 
 async function updateConversationTitle(conversationId, title) {
@@ -615,6 +609,7 @@ function resizeComposerInput() {
 function init() {
   mountApp();
   $("backBtn").onclick = () => {
+    if (cancelActiveTitleEdit()) return;
     if (state.route === "plotManage" && closePlotManagerEdit()) return;
     else showPlots();
   };
