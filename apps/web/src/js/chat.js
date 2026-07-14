@@ -15,6 +15,14 @@ export async function loadMessages(before) {
   renderMessages(page.messages || []);
 }
 
+export function hydrateTurnGenerations(root = $("messages")) {
+  root.querySelectorAll(".message-group.assistant[data-turn]").forEach((node) => {
+    if (node.dataset.variantsLoaded || !node.dataset.turn) return;
+    node.dataset.variantsLoaded = "true";
+    loadTurnGenerations(node);
+  });
+}
+
 export async function sendMessage(message, options = {}) {
   if (state.streaming) return;
   if (needsUserProfileSelection()) {
@@ -271,6 +279,7 @@ function renderMessages(messages) {
     ...messages.map(messageNode).filter(Boolean),
   ]);
   markLastUserMessage();
+  hydrateTurnGenerations();
   $("messages").scrollTop = $("messages").scrollHeight;
 }
 
@@ -506,6 +515,17 @@ function assistantMessageNode(content, id, turn, messageId = "") {
     actionNode(id, turn, [], 0, messageId),
   ]);
   return node;
+}
+
+async function loadTurnGenerations(node) {
+  try {
+    const data = await api(`/api/turns/${encodeURIComponent(node.dataset.turn)}/generations`);
+    const variants = (data.generations || []).map((item) => ({ gen: item.generationId, content: item.content }));
+    if (variants.length < 2) return;
+    const selected = Math.max(0, data.generations.findIndex((item) => item.selected || item.generationId === data.selectedGenerationId));
+    node.dataset.variants = JSON.stringify(variants);
+    renderAssistantVariant(node, selected);
+  } catch {}
 }
 
 function userMessageNode(content, messageId = "", turn = "") {

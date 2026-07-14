@@ -1,6 +1,6 @@
 import { api } from "./api.js";
 import { createCharacter, createPlot, loadCatalog, loadMorePlots, openPlot, renderPlots } from "./catalog.js";
-import { bindUserProfileSheet, cancelComposerEdit, canResendEditedUserMessage, canSendEmptyMessage, deleteMessage, editGeneration, editUserMessage, loadMessages, markLastUserMessage, messageNode, needsUserProfileSelection, openUserProfileSheet, promptUserProfileIfNeeded, regenerate, resendEditedUserMessage, saveComposerEdit, sendMessage, showAssistantVariant, updateComposer } from "./chat.js";
+import { bindUserProfileSheet, cancelComposerEdit, canResendEditedUserMessage, canSendEmptyMessage, deleteMessage, editGeneration, editUserMessage, hydrateTurnGenerations, loadMessages, markLastUserMessage, messageNode, needsUserProfileSelection, openUserProfileSheet, promptUserProfileIfNeeded, regenerate, resendEditedUserMessage, saveComposerEdit, sendMessage, showAssistantVariant, updateComposer } from "./chat.js";
 import { keys } from "./config.js";
 import * as conversations from "./conversations.js";
 import { $, closeDropdowns, confirmDialog, el, openDropdown, parseJson, toast, toggleDropdown } from "./dom.js";
@@ -365,6 +365,7 @@ function bindChat() {
       const notice = $("messages").querySelector(".notice");
       notice ? notice.after(...nodes) : $("messages").prepend(...nodes);
       markLastUserMessage();
+      hydrateTurnGenerations($("messages"));
       $("messages").scrollTop = $("messages").scrollHeight - height;
     } catch {}
   };
