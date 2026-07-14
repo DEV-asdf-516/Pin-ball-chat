@@ -7,8 +7,11 @@ from util.string_util import join_columns
 
 
 def active_messages_sql(columns: tuple[str, ...], order: str = "DESC", extra_where: str = "", tail: str = "") -> str:
-    # 재생성으로 rejected된 assistant 후보를 뺀, generations.rejected=0인 "active" 메시지 조회 쿼리를 조립한다.
-    # list_messages/build_prompt의 recent/writer의 _active_messages가 컬럼·정렬 방향·커서 조건만 다르게 넣어 공유한다.
+    # 재생성으로 rejected된 assistant 후보와, 빈 입력(전개 요청)으로 생성된 내용 없는 user 턴을 뺀
+    # "active" 메시지 조회 쿼리를 조립한다. 빈 입력 턴은 turns.user_message_id FK 때문에 messages
+    # row 자체는 남지만(요청은 실제로 있었으니까), 대화 이력으로는 취급하지 않는다 — 매 호출 재조립되는
+    # build_prompt()의 recent나 요약 대상(pending)에 빈 turn이 그대로 다시 들어가면 의미 없는 히스토리만 남는다.
+    # list_messages/build_prompt의 recent/summary writer의 pending이 컬럼·정렬 방향·커서 조건만 다르게 넣어 공유한다.
     return f"""
     SELECT {join_columns(columns)}
     FROM messages m
@@ -16,6 +19,7 @@ def active_messages_sql(columns: tuple[str, ...], order: str = "DESC", extra_whe
     ON m.generation_id = g.id
     WHERE m.conversation_id=:conversation_id
     AND (m.generation_id IS NULL OR g.rejected=0)
+    AND (m.role != 'user' OR m.content != '')
     {extra_where}
     ORDER BY m.rowid {order}
     {tail}
