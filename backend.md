@@ -21,7 +21,7 @@
 - route handler는 파싱 → domain 호출 → error 매핑 → response만.
 
 ## 콘텐츠 파일
-- `preferences/` = `.json`(생성 방식만), `characters/`·`user_profiles/`·`plots/` = `.md`(순수 서술만).
+- 전부 `data/` 밑(배포 시 코드 위치와 무관한 단일 데이터 디렉토리, `PINBALLCHAT_ROOT`로 이동 가능): `data/preferences/` = `.json`(생성 방식만), `data/characters/`·`data/user_profiles/`·`data/plots/` = `.md`(순수 서술만), `data/rules/`에 시스템/요약 프롬프트 JSON.
 - 전역 규칙은 `preferences/global.json`에만 두고 개별 파일에서 반복하지 않는다.
 - OOC는 md 본문 `OOC:` 줄 또는 json `ooc[]` 중 한 곳에만.
 - scope 우선순위: global → genre → character → plot → conversation (list는 extend, scalar는 덮어씀).

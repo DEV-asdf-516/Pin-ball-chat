@@ -8,6 +8,11 @@ from domain.catalog.reader import find_catalog_by_id
 from domain.catalog.specs import CharacterData, CatalogKind, PlotData, UserProfileData, parse_catalog_data
 from domain.conversations.specs import CONVERSATIONS
 
+# build_prompt()가 최근 RECENT_WINDOW개 메시지는 항상 원문으로 넣고, 그보다 오래돼 밀려난 메시지가
+# SUMMARY_TRIGGER개 이상 쌓였을 때만 요약을 갱신한다 (system/reader.py, summary/writer.py가 공유).
+RECENT_WINDOW = 20
+SUMMARY_TRIGGER = 10
+
 
 def row_json(row: sqlite3.Row | dict, key: str) -> dict:
     return json.loads(row[key])

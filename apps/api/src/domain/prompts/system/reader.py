@@ -4,10 +4,9 @@ import sqlite3
 from dataclasses import dataclass
 
 from ai.specs import Message
-from core.db import ROOT, RawSQL, fetch_all
+from core.db import DATA_ROOT, RawSQL, fetch_all
 from domain.conversations.reader import active_messages_sql
-from domain.conversations.specs import RECENT_WINDOW
-from domain.prompts.context import build_ctx, described, render_value, resolve_prompt_context, row_json, tag
+from domain.prompts.context import RECENT_WINDOW, build_ctx, described, render_value, resolve_prompt_context, row_json, tag
 
 
 _OOC_PATTERN = re.compile(
@@ -16,7 +15,7 @@ _OOC_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-_SYSTEM_PROMPT_PATH = ROOT / "rules" / "system_prompt.json"
+_SYSTEM_PROMPT_PATH = DATA_ROOT / "rules" / "system_prompt.json"
 
 
 def _system_prompt() -> dict:

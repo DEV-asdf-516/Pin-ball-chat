@@ -4,21 +4,20 @@ import sqlite3
 
 from ai.registry import stream_text
 from ai.specs import GenerateRequest, Message
-from core.db import ROOT, Bind, RawSQL, ReadQuery, WriteQuery, connect, fetch_all, fetch_one, find_one, init_db, update
+from core.db import DATA_ROOT, Bind, RawSQL, ReadQuery, WriteQuery, connect, fetch_all, fetch_one, find_one, init_db, update
 from domain.conversations.reader import active_messages_sql
-from domain.conversations.specs import CONVERSATIONS, RECENT_WINDOW, SUMMARY_TRIGGER
-from domain.prompts.context import build_ctx, described, render_value, resolve_prompt_context
+from domain.conversations.specs import CONVERSATIONS
+from domain.prompts.context import RECENT_WINDOW, SUMMARY_TRIGGER, build_ctx, described, render_value, resolve_prompt_context
 from domain.specs import GenerationParams
 from util.time_util import utc_now_string
 
 log = logging.getLogger(__name__)
 
-# ai.settings.DEFAULT_NUM_PREDICT(160)는 짧은 채팅 응답 기준이라 800자 요약 포맷을 다 못 채우고 잘린다.
 # 요약 호출은 그거 말고 이 값을 쓴다.
 _SUMMARY_NUM_PREDICT = 1300
 _SUMMARY_NUM_CTX = 16384
 
-_SUMMARY_SYSTEM_PROMPT_PATH = ROOT / "rules" / "summary_system_prompt.json"
+_SUMMARY_SYSTEM_PROMPT_PATH = DATA_ROOT / "rules" / "summary_system_prompt.json"
 
 # 채팅 스트리밍 응답 전송이 끝난 뒤 백그라운드로 호출된다 
 # build_prompt()가 최근 RECENT_WINDOW개 메시지는 항상 원문으로 넣으므로, 그보다 오래돼 밀려난 메시지가 
@@ -85,7 +84,6 @@ async def maybe_update_summary(conversation_id: str) -> None:
             ])
 
             # summary_system_prompt.json의 {{char}}/{{user}}를 실제 이름으로 치환한다.
-            # 파일은 매 호출마다 다시 읽는다 — system_prompt와 같은 이유(재시작 없이 수정 반영).
             summary_system_prompt: dict = json.loads(_SUMMARY_SYSTEM_PROMPT_PATH.read_text(encoding="utf-8"))
             warnings: list = []
             instruction: str = "\n\n".join(
@@ -97,7 +95,7 @@ async def maybe_update_summary(conversation_id: str) -> None:
                 for key in ("role", "format", "output_rules")
             )
 
-            req = GenerateRequest(
+            req : GenerateRequest = GenerateRequest(
                 system=instruction,
                 messages=[Message(role="user", content=prompt_body)],
                 model=params.model,

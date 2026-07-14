@@ -18,11 +18,6 @@ services:
       OLLAMA_BASE_URL: http://host.docker.internal:11434
     volumes:
       - ./data:/app/data
-      - ./characters:/app/characters
-      - ./user_profiles:/app/user_profiles
-      - ./plots:/app/plots
-      - ./preferences:/app/preferences
-      - ./rules:/app/rules
     depends_on:
       - ollama
 

@@ -12,14 +12,14 @@
 - [ ] 독립 캐릭터 관리 UI (`PUT/DELETE /api/characters/{id}`; 생성은 현재 플롯 생성 흐름에만 붙어 있음)
 - [x] 메시지 삭제 UI (`DELETE /api/messages/{messageId}`)
 - [ ] 메시지 일괄 삭제 UI (`POST /api/messages/batch-delete`)
-- [ ] 턴 후보 목록 조회 UI (`GET /api/turns/{turnId}/generations`; 새로고침 후 후보 전환 복원 등)
+- [x] 턴 후보 목록 조회 UI (`GET /api/turns/{turnId}/generations`; 새로고침 후 후보 전환 복원 등)
+- [ ] 콘텐츠 동적 관리 UI (캐릭터/선호 CRUD API는 이미 있음 — `POST/PUT/DELETE /api/characters`, `/api/preference-profiles`; UI만 없음)
 
 ## API
 - [x] 카탈로그 목록 API 페이징 추가 (`/api/plots`, `/api/characters`, `/api/user-profiles`, `/api/preference-profiles`)
 - [x] 대화 롤링 요약 (5턴마다 오래된 메시지를 요약으로 압축해 `<summary>`로 프롬프트에 주입, 채팅 응답 전송 후 백그라운드로 갱신)
 - [x] 빈 입력 전개 요청(`message: ""`)을 user message로 저장하지 않고 전개 요청으로 처리 (row 자체는 turns FK 때문에 남지만, 대화 이력·요약 대상에서는 제외)
 - [ ] 이미지 업로드 엔드포인트
-- [ ] 콘텐츠 동적 관리 (캐릭터/선호 파일 UI 추가·수정·삭제)
 
 ## README
 - [ ] UI 스크린샷 추가

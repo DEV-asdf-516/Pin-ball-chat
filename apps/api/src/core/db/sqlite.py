@@ -12,7 +12,10 @@ from util.string_util import join_columns
 # Docker는 PINBALLCHAT_ROOT=/app을 항상 명시적으로 주입하므로 이 fallback은 로컬 실행 전용이다.
 _HERE: Path = Path(__file__).resolve()
 ROOT: Path = Path(os.environ.get("PINBALLCHAT_ROOT") or _HERE.parents[5])
-DB_PATH: Path = Path(os.environ.get("DB_PATH", ROOT / "data" / "pinballchat.sqlite"))
+# 콘텐츠 파일(characters/plots/user_profiles/preferences/rules)과 DB가 전부 이 하나의 디렉토리 밑에 산다 —
+# 배포 시 코드 위치(ROOT)와 무관하게 이 한 곳만 볼륨/경로로 잡아주면 된다.
+DATA_ROOT: Path = ROOT / "data"
+DB_PATH: Path = Path(os.environ.get("DB_PATH", DATA_ROOT / "pinballchat.sqlite"))
 
 TABLE_NAMES: list[str] = [
     "characters",

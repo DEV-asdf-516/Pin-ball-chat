@@ -16,8 +16,3 @@ docs/
 *.sqlite
 *.sqlite3
 data/
-plots/
-preferences/
-user_profiles/
-characters/
-rules/

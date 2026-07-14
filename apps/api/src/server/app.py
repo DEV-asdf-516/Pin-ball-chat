@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from ai.transport.http_client import HttpClient
-from core.db import ROOT, connect, init_db
+from core.db import DATA_ROOT, connect, init_db
 from domain.catalog.importer import import_catalog
 from server.errors import register_error_handlers
 from server.router import register_routes
@@ -19,7 +19,7 @@ log = logging.getLogger(__name__)
 async def lifespan(_app: FastAPI):
     with connect() as conn:
         init_db(conn)
-        errors = import_catalog(conn, ROOT)
+        errors = import_catalog(conn, DATA_ROOT)
         if errors:
             log.warning("content load errors:\n%s", "\n".join(errors))
     yield

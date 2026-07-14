@@ -3,7 +3,7 @@ import re
 import sqlite3
 from pathlib import Path
 
-from core.db import ROOT, Bind, WriteQuery, delete, upsert
+from core.db import DATA_ROOT, Bind, WriteQuery, delete, upsert
 from core.errors import ensure
 from domain.catalog.reader import is_catalog_exists, find_catalog_by_id
 from domain.catalog.specs import FORWARD_REFS, REFERENCED_BY, SPEC_BY_KIND, CatalogKind, CatalogPayload, CatalogSpec, parse_catalog_data
@@ -41,7 +41,7 @@ def upsert_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, payload: Ca
 
     upsert(conn, spec, values)
 
-def create_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, data: dict, root: Path = ROOT) -> dict:
+def create_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, data: dict, root: Path = DATA_ROOT) -> dict:
     if data.get("type", kind) != kind:
         raise ValueError(f"type must be {kind}")
     
@@ -78,7 +78,7 @@ def create_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, data: dict,
     return find_catalog_by_id(conn, kind, row_id)
 
 
-def update_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, item_id: str, data: dict, root: Path = ROOT) -> dict:
+def update_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, item_id: str, data: dict, root: Path = DATA_ROOT) -> dict:
     _validate_id(item_id)
 
     data = {**data, "id": item_id}
@@ -114,7 +114,7 @@ def update_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, item_id: st
     return find_catalog_by_id(conn, kind, item_id)
 
 
-def delete_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, item_id: str, root: Path = ROOT) -> dict:
+def delete_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, item_id: str, root: Path = DATA_ROOT) -> dict:
     _validate_id(item_id)
     spec: CatalogSpec = SPEC_BY_KIND[kind]
     path: Path = _file_path(kind, item_id, root)
