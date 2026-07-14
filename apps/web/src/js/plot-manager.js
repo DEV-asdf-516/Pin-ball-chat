@@ -52,8 +52,8 @@ function plotRow(plot) {
   return el("button", { type: "button", className: "plot-manage-row", dataset: { managePlot: plot.id } }, [
     plotThumb(plot),
     el("div", { className: "plot-manage-info" }, [
-      el("strong", { text: plot.title || plot.id }),
-      el("span", { className: "meta", text: plot.id }),
+      el("strong", { text: plotTitle(plot) }),
+      el("span", { className: "meta", text: plotMeta(plot) }),
     ]),
     el("span", { className: "plot-manage-edit-icon", text: "✎" }),
   ]);
@@ -76,7 +76,7 @@ function showPlotManageEdit() {
 }
 
 async function saveManagedPlot() {
-  const id = $("plotManageId").value.trim();
+  const id = state.managedPlotId;
   if (!id) {
     toast("수정할 플롯을 선택하세요");
     return;
@@ -99,8 +99,9 @@ async function saveManagedPlot() {
 }
 
 async function deleteManagedPlot() {
-  const id = $("plotManageId").value.trim();
-  if (!id || !(await confirmDialog(`${id} 플롯을 삭제할까요?`, { danger: true }))) return;
+  const id = state.managedPlotId;
+  const plot = findPlot(id);
+  if (!id || !(await confirmDialog(`${plotTitle(plot)} 플롯을 삭제할까요?`, { danger: true }))) return;
   try {
     await deletePlot(id);
     state.managedPlotId = null;
@@ -121,7 +122,6 @@ function renderPlotEditForm(id) {
   const plot = findPlot(id);
   setChildren($("plotManageEditMount"), [
     el("form", { id: "plotManageForm", className: "form-page plot-manage-edit" }, [
-      field("plotManageId", "ID", el("input", { id: "plotManageId", value: plot?.id || "", attrs: { disabled: "true" } })),
       field("plotManageTitle", "제목", el("input", { id: "plotManageTitle", value: plot?.title || "", attrs: { autocomplete: "off" } })),
       field("plotManageGenreList", "장르", el("div", { id: "plotManageGenreList", className: "genre-picker" })),
       field("plotManageSource", "본문", el("textarea", { id: "plotManageSource", text: plot?.source_text || "", attrs: { rows: "12" } })),
@@ -147,7 +147,23 @@ function plotThumb(plot) {
   const char = state.chars.get(plot.character_id);
   const src = safeImageUrl(parseJson(char?.profile_json).avatarUrl);
   if (src) return el("img", { className: "plot-manage-thumb", attrs: { src, alt: "" } });
-  return el("div", { className: "plot-manage-thumb", text: (char?.name || plot.title || "?").trim().slice(0, 1) });
+  return el("div", { className: "plot-manage-thumb", text: (char?.name || plotTitle(plot) || "?").trim().slice(0, 1) });
+}
+
+function plotTitle(plot) {
+  return plot?.title || "제목 없는 플롯";
+}
+
+function plotMeta(plot) {
+  const char = state.chars.get(plot.character_id);
+  const genres = parseJson(plot.plot_json).genre || [];
+  return [characterName(char), ...genres].filter(Boolean).join(" · ") || "플롯";
+}
+
+function characterName(char) {
+  if (!char) return "";
+  const profile = parseJson(char.profile_json);
+  return profile.displayName || profile.display_name || char.name || profile.name || "";
 }
 
 function safeImageUrl(value) {

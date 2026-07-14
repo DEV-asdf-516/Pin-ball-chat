@@ -135,8 +135,8 @@ function plotCard(plot) {
     el("div", { className: "plot-card-head" }, [
       characterAvatar(char),
       el("div", {}, [
-        el("h2", { text: plot.title || plot.id }),
-        el("div", { className: "meta", text: characterName(char) || plot.character_id }),
+        el("h2", { text: plot.title || "제목 없는 플롯" }),
+        el("div", { className: "meta", text: characterName(char) || "캐릭터" }),
       ]),
     ]),
     el("div", { className: "tags" }, plotGenre(plot).map((g) => el("span", { className: "tag", text: g }))),
@@ -149,7 +149,7 @@ function renderDetail() {
   const char = state.chars.get(plot.character_id);
   setChildren($("plotDetail"), [
     el("section", {}, [
-      el("h2", { text: plot.title || plot.id }),
+      el("h2", { text: plot.title || "제목 없는 플롯" }),
       el("div", { className: "tags" }, plotGenre(plot).map((g) => el("span", { className: "tag", text: g }))),
     ]),
     el("section", {}, [
@@ -158,8 +158,8 @@ function renderDetail() {
         el("div", { className: "plot-card-head" }, [
           characterAvatar(char),
           el("div", {}, [
-            el("strong", { text: characterName(char) || plot.character_id }),
-            el("div", { className: "meta", text: char ? char.id : "캐릭터 정보를 불러오는 중..." }),
+            el("strong", { text: characterName(char) || "캐릭터" }),
+            el("div", { className: "meta", text: char ? "플롯 캐릭터" : "캐릭터 정보를 불러오는 중..." }),
           ]),
         ]),
         el("div", { className: "source character-source", text: char?.source_text || "캐릭터 정보를 찾지 못했습니다." }),
@@ -194,7 +194,7 @@ function sourcePreview(source) {
 function characterName(char) {
   if (!char) return "";
   const profile = parseJson(char.profile_json);
-  return profile.displayName || profile.display_name || char.name || profile.name || char.id;
+  return profile.displayName || profile.display_name || char.name || profile.name || "";
 }
 
 function characterAvatar(char) {

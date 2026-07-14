@@ -29,8 +29,8 @@ export function showScreen(name) {
   if (name === "plotCreate") setHeader("플롯 제작", "새 플롯", true);
   if (name === "plotManage") setHeader("플롯 관리", "수정 및 삭제", true);
   if (name === "conversations") setHeader("Pinballchat", "대화 내역");
-  if (name === "detail") setHeader(state.selectedPlot?.title || "플롯", state.selectedPlot?.id || "", true);
-  if (name === "chat") setChatHeader(chatTitle(), state.selectedPlot?.title || state.conversation?.id || "");
+  if (name === "detail") setHeader(state.selectedPlot?.title || "플롯", "", true);
+  if (name === "chat") setChatHeader(chatTitle(), state.selectedPlot?.title || "");
   updateSettingsButton(name);
 }
 
@@ -38,7 +38,7 @@ export function chatTitle() {
   if (state.conversation?.title) return state.conversation.title;
   const plot = state.selectedPlot;
   if (!plot) return "채팅";
-  return state.chars.get(plot.character_id)?.name || plot.character_id || "채팅";
+  return plot.title || "채팅";
 }
 
 function updateSettingsButton(route) {
