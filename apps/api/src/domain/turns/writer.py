@@ -45,7 +45,7 @@ def _record_user_action(conn: sqlite3.Connection, action: _UserAction) -> None:
     }))
 
 
-def save_generation_output(
+def record_generation_output(
     conn: sqlite3.Connection,
     prepared: PreparedGeneration,
     params: GenerationParams,
@@ -79,8 +79,15 @@ def save_generation_output(
         "output_text": output,
         "params_json": json.dumps(stored_params, ensure_ascii=False),
         "output_token_count": len(output.split()),
+        "selected": 1,
         "created_at": ts,
     }))
+
+    # 새로 생성된 candidate가 이 turn의 "현재 선택"이 된다 — 유저가 </>로 다른 후보를 명시적으로
+    # 고르기 전까지는. 안 그러면 regenerate 직후 selected_generation_id가 방금 rejected 처리된
+    # 옛 candidate를 계속 가리켜서, 새로고침 시 최신 후보가 선택 안 된 것처럼 보인다.
+    update(conn, WriteQuery(GENERATIONS, Bind({"selected": 0}), Bind({"turn_id": prepared.turn_id, "id": Ne(gen_id)})))
+    update(conn, WriteQuery(TURNS, Bind({"selected_generation_id": gen_id, "updated_at": ts}), Bind({"id": prepared.turn_id})))
 
     insert(conn, MESSAGES, Bind({
         "id": msg_id,
@@ -102,7 +109,7 @@ def save_generation_output(
         }
 
 
-def insert_user_turn(conn: sqlite3.Connection, prepared: PreparedGeneration) -> None:
+def create_user_turn(conn: sqlite3.Connection, prepared: PreparedGeneration) -> None:
     insert(conn, MESSAGES, Bind({
         "id": prepared.message_id,
         "conversation_id": prepared.conversation_id,
@@ -194,7 +201,7 @@ def prepare_regenerate_stream(conn: sqlite3.Connection, turn_id: str) -> Prepare
     )
 
 
-def select_generation(conn: sqlite3.Connection, generation_id: str) -> dict:
+def choose_generation(conn: sqlite3.Connection, generation_id: str) -> dict:
     gen_row: dict | None = find_one(conn, ReadQuery.by_id(GENERATIONS, generation_id))
     gen: dict = get_or_raise(gen_row, "generation not found")
 

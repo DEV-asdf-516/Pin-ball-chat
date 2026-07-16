@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 
 from domain.prompts.summary.writer import maybe_update_summary
 from domain.turns.reader import list_turn_generations
-from domain.turns.writer import delete_message, delete_messages, edit_generation, edit_user_message, prepare_chat_stream, prepare_regenerate_stream, select_generation
+from domain.turns.writer import choose_generation, delete_message, delete_messages, edit_generation, edit_user_message, prepare_chat_stream, prepare_regenerate_stream
 from domain.turns.streaming import stream_response
 from server.dependencies import DbConn
 from server.specs import BulkDeleteMessagesRequest, BulkDeleteMessagesResponse, ChatRequest, EditGenerationRequest, EditMessageRequest, EditMessageResponse, EditResponse, MessageDeleteResponse, RegenerateRequest, SelectResponse, TurnGenerationsResponse
@@ -36,7 +36,7 @@ def get_turn_generations(turn_id: str, conn: DbConn):
 
 @router.post("/api/generations/{generation_id}/select", response_model=SelectResponse)
 def post_select(generation_id: str, conn: DbConn):
-    return select_generation(conn, generation_id)
+    return choose_generation(conn, generation_id)
 
 
 @router.post("/api/generations/{generation_id}/edit", response_model=EditResponse)

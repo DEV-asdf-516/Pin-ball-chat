@@ -304,7 +304,7 @@ class MessageItem(BaseModel):
     conversation_id: str
     role: str
     content: str
-    turn_id: str
+    turn_id: str | None = None
     generation_id: str | None = None
     created_at: str
 

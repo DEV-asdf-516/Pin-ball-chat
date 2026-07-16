@@ -47,6 +47,6 @@ GENERATIONS = TableSpec(
     table="generations",
     columns=(
         "id", "turn_id", "conversation_id", "plot_id", "character_id", "user_profile_id", "model_id", "adapter_id",
-        "candidate_index", "prompt_snapshot", "prompt_hash", "output_text", "params_json", "output_token_count", "created_at",
+        "candidate_index", "prompt_snapshot", "prompt_hash", "output_text", "params_json", "output_token_count", "selected", "created_at",
     ),
 )

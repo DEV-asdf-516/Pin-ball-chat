@@ -112,6 +112,7 @@ class PlotData(CatalogPayload):
     source_text: str
     title: str | None = None
     genre: list[str] = field(default_factory=list)
+    intro: dict | None = None
 
     @property
     def columns(self) -> dict:

@@ -50,6 +50,7 @@ def build_ctx(plot: dict, char: dict, user: dict) -> dict:
 def render_value(value, ctx: dict, warnings: list) -> str:
 
     if isinstance(value, str):
+        
         def replace(match: re.Match) -> str:
             name: str = match.group(1).strip()
             if name not in ctx:

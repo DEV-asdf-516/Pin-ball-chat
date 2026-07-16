@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 from domain.conversations.reader import get_conversation, get_conversation_settings, list_conversations, list_messages
-from domain.conversations.writer import create_conversation, delete_conversation, save_conversation_settings, set_conversation_title, set_conversation_user_profile
+from domain.conversations.writer import create_conversation, delete_conversation, update_conversation_settings, update_conversation_title, update_conversation_user_profile
 from server.dependencies import DbConn
 from server.specs import (
     ConversationDeleteResponse,
@@ -47,12 +47,12 @@ def get_conversation_messages(conversation_id: str, conn: DbConn, before: int | 
 
 @router.put("/api/conversations/{conversation_id}/user-profile", response_model=ConversationDetailResponse)
 def put_conversation_user_profile(conversation_id: str, body: SetConversationUserProfileRequest, conn: DbConn):
-    return set_conversation_user_profile(conn, conversation_id, body.user_profile_id)
+    return update_conversation_user_profile(conn, conversation_id, body.user_profile_id)
 
 
 @router.put("/api/conversations/{conversation_id}/title", response_model=ConversationDetailResponse)
 def put_conversation_title(conversation_id: str, body: SetConversationTitleRequest, conn: DbConn):
-    return set_conversation_title(conn, conversation_id, body.title)
+    return update_conversation_title(conn, conversation_id, body.title)
 
 
 @router.get("/api/conversations/{conversation_id}/settings", response_model=ConversationSettingsResponse | None)
@@ -62,4 +62,4 @@ def get_settings(conversation_id: str, conn: DbConn):
 
 @router.put("/api/conversations/{conversation_id}/settings", response_model=ConversationSettingsResponse | None)
 def put_settings(conversation_id: str, body: GenerationParamsRequest, conn: DbConn):
-    return save_conversation_settings(conn, conversation_id, body.to_params())
+    return update_conversation_settings(conn, conversation_id, body.to_params())

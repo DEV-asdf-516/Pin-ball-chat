@@ -36,9 +36,17 @@
 - 커서 페이지네이션 WHERE는 `CursorQuery.clause(column, before, prefix=...)`.
 - named binding(`:key`)만 사용, positional `?` 금지. table/column은 whitelist에서만.
 - schema 변경은 별도 작업으로 분리.
+- api 컨테이너 떠 있을 때 실 DB 파일에 호스트 sqlite3로 직접 ALTER/write 금지 — WAL 커넥션과 충돌해 `disk I/O error` 남; `docker compose exec api python -c "..."`로 컨테이너 안에서 하거나 컨테이너 내리고 작업.
 
 ## 이름
 - `helper`/`common`/`misc` 같은 포괄 이름 금지. 파일 내부 전용 helper는 `_prefix`.
+
+### CRUD 작명
+- 도메인 public CUD는 `create_`/`update_`/`delete_`를 쓴다.
+- `select`/`insert`/`upsert`/`save` 같은 DB 동사는 `core/db`나 내부 helper에만 둔다.
+
+### 유스케이스 작명
+- 후보·옵션 선택은 `choose_`, 실행 전 준비는 `prepare_`, 프로세스 시작은 `start_`, 결과·이벤트 기록은 `record_`를 쓴다.
 
 ## 검증
 ```bash

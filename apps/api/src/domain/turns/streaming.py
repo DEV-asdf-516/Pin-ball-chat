@@ -8,7 +8,7 @@ from ai.specs import GenerateRequest
 from core.db import connect, init_db
 from domain.specs import GenerationParams
 from domain.turns.specs import PreparedGeneration
-from domain.turns.writer import insert_user_turn, start_regeneration, save_generation_output
+from domain.turns.writer import create_user_turn, record_generation_output, start_regeneration
 
 log = logging.getLogger(__name__)
 
@@ -45,12 +45,12 @@ async def stream_response(prepared: PreparedGeneration, params: GenerationParams
             init_db(conn)
 
             if prepared.message_id:
-                insert_user_turn(conn, prepared)
+                create_user_turn(conn, prepared)
 
             if prepared.current_generation_id:
                 start_regeneration(conn, prepared)
 
-            saved: dict = save_generation_output(conn, prepared, params, req, output)
+            saved: dict = record_generation_output(conn, prepared, params, req, output)
 
         yield sse(
             "done", {

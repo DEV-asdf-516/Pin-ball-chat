@@ -1,3 +1,5 @@
+import json
+
 from util.string_util import strip_from
 
 _NEWLINE: str = "\n"
@@ -14,6 +16,8 @@ def render_frontmatter(meta: dict, body: str) -> str:
         if isinstance(value, list):
             lines.append(f"{key}:")
             lines.extend(f"{_LIST_PREFIX}{item}" for item in value)
+        elif isinstance(value, dict):
+            lines.append(f"{key}: {json.dumps(value, ensure_ascii=False)}")
         else:
             lines.append(f"{key}: {value}")
     
@@ -50,7 +54,12 @@ def parse_frontmatter(text: str) -> tuple[dict, str]:
         
         current = key.strip()
         value = value.strip()
-        
-        meta[current] = [] if value == "" else value
+
+        if value == "":
+            meta[current] = []
+        elif value.startswith("{"):
+            meta[current] = json.loads(value)
+        else:
+            meta[current] = value
     
     return meta, strip_from(text, end + len(_CLOSE) + 1)

@@ -8,7 +8,7 @@ from core.errors import ensure
 from domain.catalog.reader import is_catalog_exists, find_catalog_by_id
 from domain.catalog.specs import FORWARD_REFS, REFERENCED_BY, SPEC_BY_KIND, CatalogKind, CatalogPayload, CatalogSpec, parse_catalog_data
 from util.catalog_util import LoadedCatalog, write_catalog_file
-from util.safe_util import get_safe_tuple
+from util.safe_util import get_safe_list, get_safe_tuple
 from util.time_util import utc_now_string
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_\-]+$")
@@ -17,6 +17,23 @@ _SAFE_ID = re.compile(r"^[A-Za-z0-9_\-]+$")
 def _validate_id(item_id: str) -> None:
     if not _SAFE_ID.match(item_id):
         raise ValueError(f"invalid id: {item_id}")
+
+
+def _validate_intro(data: dict) -> None:
+    intro: dict | None = data.get("intro")
+    
+    if intro is None:
+        return
+    
+    blocks: list = get_safe_list(intro, "blocks")
+
+    if not isinstance(blocks, list) or not blocks:
+        raise ValueError("intro.blocks must be a non-empty array")
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") not in ("assistant", "user"):
+            raise ValueError("intro block type must be 'assistant' or 'user'")
+        if not block.get("content"):
+            raise ValueError("intro block content must not be empty")
 
 
 def _file_path(kind: CatalogKind, item_id: str, root: Path) -> Path:
@@ -57,6 +74,9 @@ def create_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, data: dict,
     if path.exists():
         raise ValueError(f"{kind} {row_id} already exists")
 
+    if kind == CatalogKind.PLOT:
+        _validate_intro(data)
+
     payload: CatalogPayload = parse_catalog_data(kind, data)
 
     for ref_kind, attr in get_safe_tuple(FORWARD_REFS, kind):
@@ -92,6 +112,9 @@ def update_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, item_id: st
     ensure(item_found, f"{kind} {item_id} not found")
 
     previous_text: str = path.read_text(encoding="utf-8")
+
+    if kind == CatalogKind.PLOT:
+        _validate_intro(data)
 
     payload: CatalogPayload = parse_catalog_data(kind, data)
 
