@@ -5,13 +5,19 @@
 - [x] 대화 목록도 `nextCursor`/`hasMore`를 사용해 추가 페이지 로드
 - [x] 플롯 제작 화면 추가 (`+` 원 버튼 → 제작 화면 전환 → 저장 후 상세 이동)
 - [x] 플롯 관리 화면 추가 (플롯 수정·삭제)
+- [x] 플롯 관리 편집 화면에서는 검색/더보기 toolbar 숨김
+- [x] 플롯 관리 본문 입력칸은 남는 높이를 채우고, 내용 초과 시 textarea 내부 스크롤
+- [x] 플롯 수정 화면을 플롯 제작 화면과 동일한 UI/흐름으로 정리 (제목/장르/본문/캐릭터 섹션/하단 저장 영역)
+- [x] 새로고침해도 현재 화면/선택 상태 유지 (예: 플롯 상세, 플롯 관리 편집, 대화방)
 - [ ] 프로필 이미지 업로드 (캐릭터 프사)
+- [x] 마지막 assistant의 턴에서만 메시지 재생성 가능한 refresh icon 표시 (현재는 assistant 턴마다 표시됨)
+- [x] 메시지 후보 < > 화살표 버튼의 크기 refresh icon과 동일하게 맞출 것(얘만 좀더 큼)
 
 ## API 있음 / UI 없음
 - [x] 유저 프로필 생성/수정/삭제 UI (`POST/PUT/DELETE /api/user-profiles`)
-- [ ] 독립 캐릭터 관리 UI (`PUT/DELETE /api/characters/{id}`; 생성은 현재 플롯 생성 흐름에만 붙어 있음)
+- [x] 플롯 관리 화면에서 해당 플롯의 캐릭터 정보도 함께 수정 (`PUT /api/characters/{id}`; 캐릭터명/설명/프사, 제작 화면의 캐릭터 섹션과 동일한 UI)
 - [x] 메시지 삭제 UI (`DELETE /api/messages/{messageId}`)
-- [ ] 메시지 일괄 삭제 UI (`POST /api/messages/batch-delete`)
+- [x] 메시지 일괄 삭제 UI (`POST /api/messages/batch-delete`)
 - [x] 턴 후보 목록 조회 UI (`GET /api/turns/{turnId}/generations`; 새로고침 후 후보 전환 복원 등)
 - [ ] 콘텐츠 동적 관리 UI (캐릭터/선호 CRUD API는 이미 있음 — `POST/PUT/DELETE /api/characters`, `/api/preference-profiles`; UI만 없음)
 
