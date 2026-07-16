@@ -74,11 +74,35 @@ main {
 }
 
 #plotsScreen,
+#conversationsScreen {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 #plotCreateScreen,
-#plotManageScreen,
-#conversationsScreen,
 #detailScreen {
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+#plotManageScreen {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+#plotCreateScreen > .detail,
+#detailScreen > .detail {
+  grid-row: 1;
+}
+
+#plotCreateScreen > .bottom,
+#detailScreen > .bottom {
+  grid-row: 2;
+}
+
+#plotManageToolbar {
+  grid-row: 1;
+}
+
+#plotManageScreen > .plot-manage-detail {
+  grid-row: 2;
 }
 
 #chatScreen {

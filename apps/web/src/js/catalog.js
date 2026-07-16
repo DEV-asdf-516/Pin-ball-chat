@@ -2,16 +2,12 @@ import { api } from "./api.js";
 import { keys } from "./config.js";
 import { $, el, parseJson, setChildren } from "./dom.js";
 import { loadCursorPage } from "./paging.js";
-import { state } from "./state.js";
+import { notify, state } from "./state.js";
 
 const catalogConfig = {
-  plots: { path: "/api/plots", key: "plots", assign: (items, append) => { state.plots = append ? [...state.plots, ...items] : items; } },
-  chars: { path: "/api/characters", key: "characters", assign: (items, append) => {
-    state.chars = append ? new Map([...state.chars, ...items.map((item) => [item.id, item])]) : new Map(items.map((item) => [item.id, item]));
-  } },
-  users: { path: "/api/user-profiles", key: "user_profiles", assign: (items, append) => {
-    state.users = append ? new Map([...state.users, ...items.map((item) => [item.id, item])]) : new Map(items.map((item) => [item.id, item]));
-  } },
+  plots: { path: "/api/plots", key: "plots" },
+  chars: { path: "/api/characters", key: "characters" },
+  users: { path: "/api/user-profiles", key: "user_profiles" },
 };
 
 export async function loadCatalog() {
@@ -25,7 +21,7 @@ export async function loadCatalog() {
       loadCatalogKind("chars", true),
       loadCatalogKind("users", true),
     ]);
-    $("apiStatus").textContent = health.ok ? `${state.plots.length}개 plot 로드됨` : "API 상태 확인 실패";
+    $("apiStatus").textContent = health.ok ? `${catalogItems("plots").length}개 plot 로드됨` : "API 상태 확인 실패";
     renderPlots();
   } catch (err) {
     $("apiStatus").textContent = "로컬 API에 연결하지 못했습니다.";
@@ -35,16 +31,16 @@ export async function loadCatalog() {
 
 export async function loadCatalogKind(kind, reset = false) {
   const config = catalogConfig[kind];
-  const pageState = state.catalogPages[kind];
+  const pageState = state.catalog[kind]?.page;
   if (!config) return [];
   return loadCursorPage(pageState, {
     path: config.path,
     itemKey: config.key,
     reset,
     apply: (items, append) => {
-      config.assign(items, append);
+      writeCatalogItems(kind, items, append);
       if (kind === "plots") {
-        $("apiStatus").textContent = `${state.plots.length}개 plot 로드됨${pageState.hasMore ? " · 더 있음" : ""}`;
+        $("apiStatus").textContent = `${catalogItems("plots").length}개 plot 로드됨${pageState.hasMore ? " · 더 있음" : ""}`;
         renderPlots();
       }
     },
@@ -69,14 +65,23 @@ export async function createCharacter(data) {
     method: "POST",
     body: JSON.stringify(data),
   });
-  state.chars.set(character.id, character);
+  upsertCatalogItem("chars", character);
   return character;
 }
 
 export async function loadCharacter(id) {
   if (!id) return null;
   const character = await api(`/api/characters/${encodeURIComponent(id)}`);
-  state.chars.set(character.id, character);
+  upsertCatalogItem("chars", character);
+  return character;
+}
+
+export async function updateCharacter(id, data) {
+  const character = await api(`/api/characters/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+  upsertCatalogItem("chars", character);
   return character;
 }
 
@@ -91,26 +96,28 @@ export async function updatePlot(id, data) {
 
 export async function deletePlot(id) {
   const result = await api(`/api/plots/${encodeURIComponent(id)}`, { method: "DELETE" });
-  state.plots = state.plots.filter((plot) => plot.id !== id);
+  state.catalog.plots.byId.delete(id);
+  state.catalog.plots.order = state.catalog.plots.order.filter((plotId) => plotId !== id);
+  notify("catalog.plots");
   renderPlots();
   return result;
 }
 
 export function findPlot(id) {
-  return state.plots.find((plot) => plot.id === id);
+  return state.catalog.plots.byId.get(id) || null;
 }
 
 export function renderPlots() {
   const q = $("searchInput").value.trim().toLowerCase();
   const recent = parseJson(localStorage.getItem(keys.recent));
-  const plots = state.plots
+  const plots = catalogItems("plots")
     .filter((plot) => !q || plotHaystack(plot).includes(q))
     .sort((a, b) => (recent[b.id] || 0) - (recent[a.id] || 0) || a.id.localeCompare(b.id));
   setChildren($("plotList"), plots.length ? plots.map(plotCard) : [el("div", { className: "empty", text: "로드된 플롯이 없습니다." })]);
 }
 
 export async function openPlot(plotId, userProfileId = null, fallback = null) {
-  state.selectedPlot = state.plots.find((p) => p.id === plotId) || fallback;
+  state.selectedPlot = findPlot(plotId) || fallback;
   state.selectedUserProfileId = userProfileId || null;
   if (!state.selectedPlot) return;
   renderDetail();
@@ -123,14 +130,14 @@ function plotGenre(plot) {
 }
 
 function plotHaystack(plot) {
-  const char = state.chars.get(plot.character_id);
+  const char = state.catalog.chars.byId.get(plot.character_id);
   const genre = plotGenre(plot).join(" ");
   const source = plot.source_text || "";
   return [plot.title, plot.id, char?.name, char?.id, genre, source].filter(Boolean).join(" ").toLowerCase();
 }
 
 function plotCard(plot) {
-  const char = state.chars.get(plot.character_id);
+  const char = state.catalog.chars.byId.get(plot.character_id);
   return el("button", { className: "card", dataset: { plot: plot.id } }, [
     el("div", { className: "plot-card-head" }, [
       characterAvatar(char),
@@ -146,7 +153,7 @@ function plotCard(plot) {
 
 function renderDetail() {
   const plot = state.selectedPlot;
-  const char = state.chars.get(plot.character_id);
+  const char = state.catalog.chars.byId.get(plot.character_id);
   setChildren($("plotDetail"), [
     el("section", {}, [
       el("h2", { text: plot.title || "제목 없는 플롯" }),
@@ -165,21 +172,45 @@ function renderDetail() {
         el("div", { className: "source character-source", text: char?.source_text || "캐릭터 정보를 찾지 못했습니다." }),
       ]),
     ]),
-    el("section", {}, [
+    el("section", { className: "plot-source-section" }, [
       el("h3", { text: "플롯 내용" }),
-      el("div", { className: "source", text: plot.source_text || "" }),
+      el("div", { className: "source plot-source", text: plot.source_text || "" }),
     ]),
   ]);
 }
 
 async function ensureSelectedPlotCharacter() {
   const characterId = state.selectedPlot?.character_id;
-  if (!characterId || state.chars.has(characterId)) return;
+  if (!characterId || state.catalog.chars.byId.has(characterId)) return;
   try {
     await loadCharacter(characterId);
   } catch {
     // 상세 화면에서는 플롯 자체를 막지 않고, 캐릭터 ID fallback만 보여준다.
   }
+}
+
+function writeCatalogItems(kind, items, append) {
+  const bucket = state.catalog[kind];
+  if (!bucket) return;
+  if (!append) {
+    bucket.byId = new Map();
+    bucket.order = [];
+  }
+  for (const item of items) upsertCatalogItem(kind, item, false);
+  notify(`catalog.${kind}`);
+}
+
+function upsertCatalogItem(kind, item, notifyChange = true) {
+  const bucket = state.catalog[kind];
+  if (!bucket || !item?.id) return;
+  bucket.byId.set(item.id, item);
+  if (!bucket.order.includes(item.id)) bucket.order.push(item.id);
+  if (notifyChange) notify(`catalog.${kind}`);
+}
+
+function catalogItems(kind) {
+  const bucket = state.catalog[kind];
+  return bucket ? bucket.order.map((id) => bucket.byId.get(id)).filter(Boolean) : [];
 }
 
 function sourcePreview(source) {
@@ -208,7 +239,7 @@ function characterInitial(char) {
 }
 
 function safeImageUrl(value) {
-  if (!value) return "";
+  if (typeof value !== "string" || !value) return "";
   if (value.startsWith("data:image/")) return value;
   try {
     const url = new URL(value, window.location.href);

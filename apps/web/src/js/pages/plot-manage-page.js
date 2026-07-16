@@ -3,7 +3,7 @@ import { el } from "../dom.js";
 
 export function plotManagePage() {
   return el("section", { id: "plotManageScreen", className: "screen" }, [
-    el("div", { className: "toolbar" }, [
+    el("div", { id: "plotManageToolbar", className: "toolbar" }, [
       el("div", { className: "row" }, [
         searchField("plotManageSearchInput"),
         el("button", { id: "plotManageMoreBtn", type: "button", text: "더 보기" }),

@@ -1,11 +1,14 @@
 import { api } from "./api.js";
+import { activeConversation, conversationActivated, messagesLoaded } from "./actions.js";
 import { createCharacter, createPlot, loadCatalog, loadMorePlots, openPlot, renderPlots } from "./catalog.js";
-import { bindUserProfileSheet, cancelComposerEdit, canResendEditedUserMessage, canSendEmptyMessage, deleteMessage, editGeneration, editUserMessage, hydrateTurnGenerations, loadMessages, markLastUserMessage, messageNode, needsUserProfileSelection, openUserProfileSheet, promptUserProfileIfNeeded, regenerate, resendEditedUserMessage, saveComposerEdit, sendMessage, showAssistantVariant, updateComposer } from "./chat.js";
+import { bindUserProfileSheet, cancelComposerEdit, canResendEditedUserMessage, canSendEmptyMessage, deleteMessage, deleteMessagesFrom, editGeneration, editUserMessage, hydrateTurnGenerations, loadMessages, markLastUserMessage, messageNode, needsUserProfileSelection, openUserProfileSheet, promptUserProfileIfNeeded, regenerate, resendEditedUserMessage, saveComposerEdit, sendMessage, showAssistantVariant, updateComposer } from "./chat.js";
 import { keys } from "./config.js";
 import * as conversations from "./conversations.js";
 import { $, closeDropdowns, confirmDialog, el, openDropdown, parseJson, toast, toggleDropdown } from "./dom.js";
+import { activateFormTab, bindFormTabs } from "./form-tabs.js";
 import { bindGenrePicker, renderGenrePicker, selectedGenres } from "./genres.js";
-import { bindPlotManager, closePlotManagerEdit, openPlotManager } from "./plot-manager.js";
+import { bindIntroEditor, introValue, renderIntroEditor } from "./intro-editor.js";
+import { bindPlotManager, closePlotManagerEdit, openManagedPlot, openPlotManager } from "./plot-manager.js";
 import { applyTheme, bindSettings, loadConversationSettings, loadSettings } from "./settings.js";
 import { state } from "./state.js";
 import { mountApp, showScreen } from "./ui.js";
@@ -15,13 +18,11 @@ let cancelInlineTitleEdit = null;
 async function startChat() {
   try {
     const title = state.selectedPlot.title || state.selectedPlot.id;
-    state.conversation = await api("/api/conversations", {
+    const conv = conversationActivated(await api("/api/conversations", {
       method: "POST",
       body: JSON.stringify({ plotId: state.selectedPlot.id, title }),
-    });
-    state.conversation.userProfileId = state.conversation.userProfileId || null;
-    state.conversation.title = state.conversation.title || title;
-    state.conversation.fromList = false;
+    }), false);
+    if (!conv.title) conv.title = title;
     const recent = parseJson(localStorage.getItem(keys.recent));
     recent[state.selectedPlot.id] = Date.now();
     localStorage.setItem(keys.recent, JSON.stringify(recent));
@@ -143,8 +144,8 @@ function bindCatalog() {
     const conversationId = target.dataset.conversation;
     const conv = conversations.findConversation(conversationId);
     if (!conv) return;
-    state.conversation = { conversationId: conv.id, plotId: conv.plot_id, userProfileId: conv.user_profile_id, title: conv.title || "", fromList: true };
-    await openPlot(conv.plot_id, conv.user_profile_id);
+    conversationActivated(conv, true);
+    await openPlot(conv.plotId, conv.userProfileId);
     await loadConversationSettings();
     await loadMessages();
     showScreen("chat");
@@ -153,8 +154,11 @@ function bindCatalog() {
 }
 
 function bindPlotCreate() {
+  bindFormTabs("plotCreateForm");
   bindGenrePicker("plotCreateGenreList");
   renderGenrePicker("plotCreateGenreList");
+  bindIntroEditor("plotCreateIntroEditor");
+  renderIntroEditor("plotCreateIntroEditor");
   $("plotCreateCharacterAvatarFile").onchange = readCreateAvatarFile;
   $("plotCreateForm").onsubmit = async (event) => {
     event.preventDefault();
@@ -177,6 +181,7 @@ function bindPlotCreate() {
         avatarUrl: getCreateAvatarUrl(),
         sourceText: characterSource,
       });
+      const intro = introValue("plotCreateIntroEditor");
       const plot = await createPlot({
         id,
         type: "plot",
@@ -184,11 +189,14 @@ function bindPlotCreate() {
         characterId,
         genre: selectedGenres("plotCreateGenreList"),
         sourceText,
+        ...(intro ? { intro } : {}),
       });
       toast("플롯을 저장했습니다");
       $("plotCreateForm").reset();
       clearCreateAvatarPreview();
       renderGenrePicker("plotCreateGenreList");
+      renderIntroEditor("plotCreateIntroEditor");
+      activateFormTab("plotCreateForm", "prompt");
       await openPlot(plot.id, null, plot);
       showScreen("detail");
     } catch (err) {
@@ -210,6 +218,8 @@ function bindPlotFab() {
     $("plotCreateForm").reset();
     clearCreateAvatarPreview();
     renderGenrePicker("plotCreateGenreList");
+    renderIntroEditor("plotCreateIntroEditor");
+    activateFormTab("plotCreateForm", "prompt");
     showScreen("plotCreate");
   };
   $("newPlotFab").onpointerdown = () => {
@@ -240,9 +250,14 @@ function bindChat() {
   let longPressTimer = null;
   let longPressOpened = false;
   let lastComposerResetTap = 0;
-  $("chatBackBtn").onclick = () => {
+  $("chatBackBtn").onclick = async () => {
     if (cancelActiveTitleEdit()) return;
-    showScreen(state.conversation?.fromList ? "conversations" : "detail");
+    if (state.ui.chatFromList) {
+      showScreen("conversations");
+      await conversations.loadConversations();
+      return;
+    }
+    showScreen("detail");
   };
   $("chatUserProfileBtn").onclick = () => openUserProfileSheet();
   $("composer").onclick = (event) => {
@@ -278,13 +293,17 @@ function bindChat() {
     updateComposer();
   };
   $("messageInput").onkeydown = (event) => {
+    if (event.isComposing) return;
     if (event.key === "Escape" && state.composerEdit) {
       event.preventDefault();
       cancelComposerEdit();
       resizeComposerInput();
       return;
     }
-    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") $("composer").requestSubmit();
+    if (event.key === "Enter" && (event.shiftKey || event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      $("composer").requestSubmit();
+    }
   };
   $("messages").onpointerdown = (event) => {
     if (event.target.closest("button")) return;
@@ -342,6 +361,7 @@ function bindChat() {
       if (btn.dataset.action === "edit-generation") await editGeneration(btn.dataset.gen);
       if (btn.dataset.action === "edit-user") await editUserMessage(btn.dataset.message);
       if (btn.dataset.action === "delete-message" && await confirmDialog("이 메시지를 삭제할까요?", { danger: true })) await deleteMessage(btn.dataset.message);
+      if (btn.dataset.action === "batch-delete-message" && await confirmDialog("이 메시지부터 아래 대화를 삭제할까요?", { danger: true })) await deleteMessagesFrom(btn.dataset.message);
       if (btn.dataset.action === "copy") {
         const message = btn.closest("[data-content]");
         const text = message?.dataset.content || "";
@@ -354,13 +374,12 @@ function bindChat() {
     }
   };
   $("messages").onscroll = async () => {
-    if ($("messages").scrollTop >= 40 || !state.hasMore || state.streaming) return;
+    if ($("messages").scrollTop >= 40 || !state.activeMessages.hasMore || state.streaming) return;
     const height = $("messages").scrollHeight;
     try {
-      const convId = state.conversation.conversationId;
-      const page = await api(`/api/conversations/${convId}/messages?before=${state.nextCursor}&limit=30`);
-      state.nextCursor = page.nextCursor;
-      state.hasMore = page.hasMore;
+      const convId = state.activeConversationId;
+      const page = await api(`/api/conversations/${convId}/messages?before=${state.activeMessages.nextCursor}&limit=30`);
+      messagesLoaded(page, true);
       const nodes = page.messages.map(messageNode).filter(Boolean);
       const notice = $("messages").querySelector(".notice");
       notice ? notice.after(...nodes) : $("messages").prepend(...nodes);
@@ -378,7 +397,7 @@ function bindHeaderTitleEdit() {
   const clear = () => clearTimeout(timer);
   title.onpointerdown = (event) => {
     if (event.target.closest(".title-inline-input")) return;
-    if (state.route !== "chat" || !state.conversation?.conversationId) return;
+    if (state.route !== "chat" || !activeConversation()) return;
     timer = setTimeout(() => {
       titleEditOpened = true;
       editConversationTitle($("chatHeaderTitle"));
@@ -409,10 +428,10 @@ function openConversationCardMenu(target) {
 }
 
 function editConversationTitle(target = $("chatHeaderTitle")) {
-  const conversationId = state.conversation?.conversationId;
+  const conversationId = state.activeConversationId;
   if (!conversationId) return;
   closeDropdowns();
-  const current = state.conversation.title || $("chatHeaderTitle").textContent.trim();
+  const current = activeConversation()?.title || $("chatHeaderTitle").textContent.trim();
   startInlineTitleEdit(conversationId, current, target);
 }
 
@@ -448,7 +467,6 @@ function startInlineTitleEdit(conversationId, current, target) {
     }
     try {
       const nextTitle = await updateConversationTitle(conversationId, title);
-      if (state.conversation?.conversationId === conversationId) state.conversation.title = nextTitle;
       if (state.route === "chat") showScreen("chat");
       else target.textContent = nextTitle;
       toast("제목 변경 완료");
@@ -532,6 +550,42 @@ function resetComposerSize() {
   resizeComposerInput();
 }
 
+async function restoreRoute() {
+  const saved = parseJson(localStorage.getItem(keys.route));
+  if (!saved.route || saved.route === "plots") return;
+  try {
+    if (saved.route === "detail" && saved.plotId) {
+      await openPlot(saved.plotId);
+      showScreen("detail");
+      return;
+    }
+    if (saved.route === "plotCreate") {
+      showScreen("plotCreate");
+      return;
+    }
+    if (saved.route === "plotManage") {
+      openPlotManager();
+      showScreen("plotManage");
+      if (saved.managedPlotId) await openManagedPlot(saved.managedPlotId);
+      return;
+    }
+    if (saved.route === "conversations") {
+      showConversations();
+      return;
+    }
+    if (saved.route === "chat" && saved.conversationId) {
+      const conv = conversationActivated(await api(`/api/conversations/${encodeURIComponent(saved.conversationId)}`), true);
+      await openPlot(conv.plotId, conv.userProfileId, { id: conv.plotId, title: conv.title || "플롯", character_id: "", source_text: "", plot_json: "{}" });
+      await loadConversationSettings();
+      await loadMessages();
+      showScreen("chat");
+      promptUserProfileIfNeeded();
+    }
+  } catch {
+    showScreen("plots");
+  }
+}
+
 function nearBottom(node) {
   return node.scrollTop + node.clientHeight >= node.scrollHeight - 80;
 }
@@ -586,7 +640,7 @@ function getCreateAvatarUrl() {
 }
 
 function safeImageUrl(value) {
-  if (!value) return "";
+  if (typeof value !== "string" || !value) return "";
   if (value.startsWith("data:image/")) return value;
   try {
     const url = new URL(value, window.location.href);
@@ -607,7 +661,7 @@ function resizeComposerInput() {
   input.style.height = Math.min(input.scrollHeight, state.composerMaxHeight) + "px";
 }
 
-function init() {
+async function init() {
   mountApp();
   $("backBtn").onclick = () => {
     if (cancelActiveTitleEdit()) return;
@@ -617,6 +671,7 @@ function init() {
   bindCatalog();
   bindPlotCreate();
   bindPlotManager();
+  conversations.bindConversationSubscriptions();
   bindChat();
   bindHeaderTitleEdit();
   bindSettings();
@@ -624,8 +679,11 @@ function init() {
   applyTheme();
   loadSettings();
   updateComposer();
-  loadCatalog();
-  conversations.loadConversations();
+  try {
+    await loadCatalog();
+  } catch {}
+  await conversations.loadConversations();
+  await restoreRoute();
 }
 
 init();

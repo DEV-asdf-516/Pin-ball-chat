@@ -1,4 +1,5 @@
 import { apiBase, api } from "./api.js";
+import { activeConversation } from "./actions.js";
 import { keys, modelOptions } from "./config.js";
 import { $, closeDropdowns, el, setChildren, toast, toggleDropdown } from "./dom.js";
 import { state } from "./state.js";
@@ -51,8 +52,13 @@ export function generationBody(extra = {}) {
 
 export async function loadConversationSettings() {
   resetGenerationSettings();
+  const conv = activeConversation();
+  if (!conv) {
+    syncSettingsForm();
+    return;
+  }
   try {
-    const settings = await api(`/api/conversations/${state.conversation.conversationId}/settings`);
+    const settings = await api(`/api/conversations/${conv.id}/settings`);
     if (!settings) {
       syncSettingsForm();
       return;
@@ -70,8 +76,9 @@ export async function loadConversationSettings() {
 }
 
 export async function saveConversationSettings() {
-  if (!state.conversation) return;
-  await api(`/api/conversations/${state.conversation.conversationId}/settings`, {
+  const conv = activeConversation();
+  if (!conv) return;
+  await api(`/api/conversations/${conv.id}/settings`, {
     method: "PUT",
     body: JSON.stringify(generationBody()),
   });
@@ -190,7 +197,7 @@ function setModelSettingsVisible(visible) {
 }
 
 function canEditConversationSettings() {
-  return state.route === "chat" && Boolean(state.conversation?.conversationId);
+  return state.route === "chat" && Boolean(activeConversation());
 }
 
 function handleSelectOption(option) {

@@ -1,4 +1,6 @@
 import { appShell } from "./components/layout.js";
+import { activeConversation } from "./actions.js";
+import { keys } from "./config.js";
 import { $, closeDropdowns, setChildren } from "./dom.js";
 import { state } from "./state.js";
 
@@ -32,10 +34,17 @@ export function showScreen(name) {
   if (name === "detail") setHeader(state.selectedPlot?.title || "플롯", "", true);
   if (name === "chat") setChatHeader(chatTitle(), state.selectedPlot?.title || "");
   updateSettingsButton(name);
+  localStorage.setItem(keys.route, JSON.stringify({
+    route: name,
+    plotId: state.selectedPlot?.id || null,
+    managedPlotId: state.managedPlotId || null,
+    conversationId: state.activeConversationId || null,
+  }));
 }
 
 export function chatTitle() {
-  if (state.conversation?.title) return state.conversation.title;
+  const conv = activeConversation();
+  if (conv?.title) return conv.title;
   const plot = state.selectedPlot;
   if (!plot) return "채팅";
   return plot.title || "채팅";

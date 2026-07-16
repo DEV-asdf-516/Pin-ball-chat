@@ -1,4 +1,5 @@
 import { api, streamSse } from "./api.js";
+import { activeConversation, conversationProfileChanged, messagesLoaded, userProfileDeleted, userProfileUpdated } from "./actions.js";
 import { $, closeDropdowns, confirmDialog, el, parseJson, setChildren, toast, toggleDropdown } from "./dom.js";
 import { renderMarkdown } from "./markdown.js";
 import { generationBody } from "./settings.js";
@@ -7,11 +8,11 @@ import { state } from "./state.js";
 const NO_USER_PROFILE = "conversation has no user_profile set";
 
 export async function loadMessages(before) {
-  const convId = state.conversation.conversationId;
+  const convId = activeConversation()?.id;
+  if (!convId) return;
   const query = before ? `?before=${encodeURIComponent(before)}&limit=30` : "?limit=30";
   const page = await api(`/api/conversations/${convId}/messages${query}`);
-  state.nextCursor = page.nextCursor;
-  state.hasMore = page.hasMore;
+  messagesLoaded(page, Boolean(before));
   renderMessages(page.messages || []);
 }
 
@@ -21,6 +22,7 @@ export function hydrateTurnGenerations(root = $("messages")) {
     node.dataset.variantsLoaded = "true";
     loadTurnGenerations(node);
   });
+  updateRegenActions();
 }
 
 export async function sendMessage(message, options = {}) {
@@ -35,7 +37,7 @@ export async function sendMessage(message, options = {}) {
   const user = options.silentUser ? null : appendUserMessage(message);
   const assistant = appendAssistantStream();
   try {
-    await stream("/api/chat/stream", generationBody({ conversationId: state.conversation.conversationId, message }), assistant, user);
+    await stream("/api/chat/stream", generationBody({ conversationId: activeConversation()?.id, message }), assistant, user);
   } catch (err) {
     if (isUserProfileError(err)) {
       assistant.remove();
@@ -191,6 +193,22 @@ export async function deleteMessage(messageId) {
   toast("삭제 완료");
 }
 
+export async function deleteMessagesFrom(messageId) {
+  const start = document.querySelector(`[data-message="${CSS.escape(messageId)}"]`);
+  if (!start) return;
+  const ids = [...document.querySelectorAll("#messages .message-group[data-message]")]
+    .slice([...document.querySelectorAll("#messages .message-group[data-message]")].indexOf(start))
+    .map((node) => node.dataset.message)
+    .filter(Boolean);
+  if (!ids.length) return;
+  const result = await api("/api/messages/batch-delete", { method: "POST", body: JSON.stringify({ messageIds: ids }) });
+  const turnIds = result.turnIds || [];
+  turnIds.forEach((turnId) => document.querySelectorAll(`[data-turn="${CSS.escape(turnId)}"]`).forEach((node) => node.remove()));
+  (result.messageIds || ids).forEach((id) => document.querySelector(`[data-message="${CSS.escape(id)}"]`)?.remove());
+  markLastUserMessage();
+  toast("삭제 완료");
+}
+
 export function updateComposer() {
   const editing = Boolean(state.composerEdit);
   const needsProfile = needsUserProfileSelection();
@@ -261,7 +279,8 @@ export function promptUserProfileIfNeeded() {
 }
 
 export function needsUserProfileSelection() {
-  return Boolean(state.conversation && !state.conversation.userProfileId);
+  const conv = activeConversation();
+  return Boolean(conv && !conv.userProfileId);
 }
 
 export function messageNode(m) {
@@ -280,6 +299,7 @@ function renderMessages(messages) {
   ]);
   markLastUserMessage();
   hydrateTurnGenerations();
+  updateRegenActions();
   $("messages").scrollTop = $("messages").scrollHeight;
 }
 
@@ -312,14 +332,14 @@ function showUserProfileList() {
 }
 
 function renderUserProfileList() {
-  const users = [...state.users.values()];
+  const users = [...state.catalog.users.byId.values()];
   setChildren($("userProfileList"), users.length
     ? users.map(userProfileRow)
     : [el("div", { className: "empty", text: "프로필이 없습니다." })]);
 }
 
 function userProfileRow(user) {
-  const selected = user.id === state.conversation?.userProfileId;
+  const selected = user.id === activeConversation()?.userProfileId;
   return el("div", {
     className: `user-profile-row${selected ? " selected" : ""}`,
     dataset: { userProfile: user.id },
@@ -341,7 +361,7 @@ function userProfileRow(user) {
 }
 
 function showUserProfileEdit(userProfileId = "") {
-  const user = userProfileId ? state.users.get(userProfileId) : null;
+  const user = userProfileId ? state.catalog.users.byId.get(userProfileId) : null;
   $("userProfileSheetTitle").textContent = user ? "대화 프로필 편집" : "대화 프로필 추가";
   $("userProfileListView").classList.add("is-hidden");
   $("userProfileEditForm").classList.remove("is-hidden");
@@ -353,17 +373,16 @@ function showUserProfileEdit(userProfileId = "") {
 }
 
 async function selectConversationUserProfile(userProfileId) {
-  if (!state.conversation || !userProfileId) return;
+  const conv = activeConversation();
+  if (!conv || !userProfileId) return;
   try {
-    const detail = await api(`/api/conversations/${state.conversation.conversationId}/user-profile`, {
+    const detail = await api(`/api/conversations/${conv.id}/user-profile`, {
       method: "PUT",
       body: JSON.stringify({ userProfileId }),
     });
-    state.conversation.userProfileId = detail.user_profile_id || null;
-    state.selectedUserProfileId = state.conversation.userProfileId;
-    const conv = state.conversations.find((item) => item.id === state.conversation.conversationId);
-    if (conv) conv.user_profile_id = state.conversation.userProfileId;
+    conversationProfileChanged(conv.id, detail.user_profile_id || null);
     $("userProfileSheet").classList.remove("open");
+    await loadMessages();
     updateComposer();
     toast("프로필 변경 완료");
   } catch (err) {
@@ -384,7 +403,7 @@ async function saveUserProfileEdit() {
     const user = id
       ? await api(`/api/user-profiles/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(body) })
       : await api("/api/user-profiles", { method: "POST", body: JSON.stringify({ id: makeUserProfileId(), ...body }) });
-    state.users.set(user.id, user);
+    userProfileUpdated(user);
     showUserProfileList();
     toast("프로필 저장 완료");
   } catch (err) {
@@ -394,16 +413,10 @@ async function saveUserProfileEdit() {
 
 async function deleteUserProfileEdit() {
   const id = $("editUserProfileId").value.trim();
-  if (!id || !(await confirmDialog(`${userProfileName(state.users.get(id))} 프로필을 삭제할까요?`, { danger: true }))) return;
+  if (!id || !(await confirmDialog(`${userProfileName(state.catalog.users.byId.get(id))} 프로필을 삭제할까요?`, { danger: true }))) return;
   try {
     await api(`/api/user-profiles/${encodeURIComponent(id)}`, { method: "DELETE" });
-    state.users.delete(id);
-    if (state.conversation?.userProfileId === id) {
-      state.conversation.userProfileId = null;
-      state.selectedUserProfileId = null;
-      const conv = state.conversations.find((item) => item.id === state.conversation.conversationId);
-      if (conv) conv.user_profile_id = null;
-    }
+    userProfileDeleted(id);
     showUserProfileList();
     toast("프로필 삭제 완료");
   } catch (err) {
@@ -433,7 +446,7 @@ function profileAvatar(user, selected) {
 }
 
 function safeProfileImage(value) {
-  if (!value) return "";
+  if (typeof value !== "string" || !value) return "";
   if (value.startsWith("data:image/")) return value;
   try {
     const url = new URL(value, window.location.href);
@@ -492,6 +505,7 @@ function renderAssistantStream(node, content, id = "", turn = "", variants = ass
     : parts.flatMap(speakerPartNodes);
   const variantIndex = Number(node.dataset.variantIndex || Math.max(0, variants.length - 1));
   setChildren(node, [...children, actionNode(id, turn, variants, variantIndex, messageId)]);
+  updateRegenActions();
 }
 
 function renderAssistantError(node, message) {
@@ -522,10 +536,20 @@ async function loadTurnGenerations(node) {
     const data = await api(`/api/turns/${encodeURIComponent(node.dataset.turn)}/generations`);
     const variants = (data.generations || []).map((item) => ({ gen: item.generationId, content: item.content }));
     if (variants.length < 2) return;
-    const selected = Math.max(0, data.generations.findIndex((item) => item.selected || item.generationId === data.selectedGenerationId));
+    const selected = selectedVariantIndex(data, node, variants);
     node.dataset.variants = JSON.stringify(variants);
     renderAssistantVariant(node, selected);
   } catch {}
+}
+
+function selectedVariantIndex(data, node, variants) {
+  const selected = data.generations.findIndex((item) => item.selected || item.generationId === data.selectedGenerationId);
+  if (selected >= 0) return selected;
+  const current = variants.findIndex((item) => item.gen === node.dataset.gen);
+  if (current >= 0) return current;
+  const previous = Number(node.dataset.variantIndex);
+  if (Number.isInteger(previous) && previous >= 0 && previous < variants.length) return previous;
+  return variants.length - 1;
 }
 
 function userMessageNode(content, messageId = "", turn = "") {
@@ -588,7 +612,8 @@ function isNarrationSpeaker(speaker) {
 
 function isUserSpeaker(speaker) {
   if (!speaker) return false;
-  const user = state.conversation?.userProfileId ? state.users.get(state.conversation.userProfileId) : null;
+  const userProfileId = activeConversation()?.userProfileId;
+  const user = userProfileId ? state.catalog.users.byId.get(userProfileId) : null;
   const normalized = normalizeSpeakerName(speaker);
   return userSpeakerNames(user).some((name) => normalizeSpeakerName(name) === normalized);
 }
@@ -631,16 +656,25 @@ function actionNode(id, turn, variants = [], variantIndex = Math.max(0, variants
       id ? menuAction("edit-generation", "편집", { gen: id }) : null,
       menuAction("copy", "복사"),
       messageId ? menuAction("delete-message", "삭제", { message: messageId }, "danger") : null,
+      messageId ? menuAction("batch-delete-message", "이후 삭제", { message: messageId }, "danger") : null,
     ]) : null,
   ]);
 }
 
 function currentVariantMeta(id, variants, index) {
   return id && variants.length > 1 ? el("div", { className: "variant-nav" }, [
-    iconAction("variant-prev", "‹", "이전 응답"),
+    iconAction("variant-prev", "‹", "이전 응답", {}, "variant-action"),
     el("span", { text: `${index + 1}/${variants.length}` }),
-    iconAction("variant-next", "›", "다음 응답"),
+    iconAction("variant-next", "›", "다음 응답", {}, "variant-action"),
   ]) : null;
+}
+
+function updateRegenActions() {
+  const assistants = [...document.querySelectorAll("#messages .message-group.assistant[data-turn]")];
+  assistants.forEach((node, index) => {
+    const regen = node.querySelector(".regen-action");
+    if (regen) regen.hidden = index !== assistants.length - 1;
+  });
 }
 
 function userActionNode(messageId) {
@@ -649,6 +683,7 @@ function userActionNode(messageId) {
       messageId ? menuAction("edit-user", "편집", { message: messageId }) : null,
       menuAction("copy", "복사"),
       messageId ? menuAction("delete-message", "삭제", { message: messageId }, "danger") : null,
+      messageId ? menuAction("batch-delete-message", "이후 삭제", { message: messageId }, "danger") : null,
     ]),
   ]);
 }

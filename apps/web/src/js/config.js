@@ -3,6 +3,7 @@ export const keys = {
   settings: "pinballchat.generationSettings",
   apiBase: "pinballchat.apiBase",
   recent: "pinballchat.recentPlots",
+  route: "pinballchat.route",
 };
 
 export const modelOptions = {

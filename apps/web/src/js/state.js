@@ -1,22 +1,22 @@
 export const state = {
   route: "plots",
-  plots: [],
-  chars: new Map(),
-  users: new Map(),
-  catalogPages: {
-    plots: { nextCursor: null, hasMore: false, loading: false },
-    chars: { nextCursor: null, hasMore: false, loading: false },
-    users: { nextCursor: null, hasMore: false, loading: false },
+  catalog: {
+    plots: { byId: new Map(), order: [], page: { nextCursor: null, hasMore: false, loading: false } },
+    chars: { byId: new Map(), order: [], page: { nextCursor: null, hasMore: false, loading: false } },
+    users: { byId: new Map(), order: [], page: { nextCursor: null, hasMore: false, loading: false } },
   },
   selectedPlot: null,
   selectedUserProfileId: null,
   managedPlotId: null,
-  conversation: null,
-  conversations: [],
-  conversationPage: { nextCursor: null, hasMore: false, loading: false },
-  hasMore: false,
-  nextCursor: null,
+  activeConversationId: null,
+  activeMessages: { list: [], nextCursor: null, hasMore: false },
+  conversations: {
+    byId: new Map(),
+    order: [],
+    page: { nextCursor: null, hasMore: false, loading: false },
+  },
   streaming: false,
+  ui: { chatFromList: false },
   composerEdit: null,
   pendingUserResend: null,
   composerHeight: null,
@@ -30,3 +30,14 @@ export const state = {
     adapterId: "",
   },
 };
+
+const listeners = new Map();
+
+export function subscribe(key, fn) {
+  if (!listeners.has(key)) listeners.set(key, new Set());
+  listeners.get(key).add(fn);
+}
+
+export function notify(...keys) {
+  for (const key of keys) listeners.get(key)?.forEach((fn) => fn());
+}

@@ -1,21 +1,29 @@
 import { api } from "./api.js";
+import { conversationDeleted, conversationsLoaded, conversationTitleChanged } from "./actions.js";
 import { $, el, parseJson, setChildren } from "./dom.js";
 import { loadCursorPage } from "./paging.js";
-import { state } from "./state.js";
+import { state, subscribe } from "./state.js";
+
+let subscriptionsBound = false;
+
+export function bindConversationSubscriptions() {
+  if (subscriptionsBound) return;
+  subscriptionsBound = true;
+  subscribe("conversations", renderConversations);
+  subscribe("catalog.users", renderConversations);
+  subscribe("catalog.plots", renderConversations);
+}
 
 export async function loadConversations(reset = true) {
   $("conversationStatus").textContent = "대화 불러오는 중...";
   try {
-    await loadCursorPage(state.conversationPage, {
+    await loadCursorPage(state.conversations.page, {
       path: "/api/conversations",
       itemKey: "conversations",
       reset,
-      apply: (items, append) => {
-        state.conversations = append ? [...state.conversations, ...items] : items;
-      },
+      apply: conversationsLoaded,
     });
-    $("conversationStatus").textContent = `${state.conversations.length}개 대화${state.conversationPage.hasMore ? " · 더 있음" : ""}`;
-    renderConversations();
+    $("conversationStatus").textContent = `${state.conversations.order.length}개 대화${state.conversations.page.hasMore ? " · 더 있음" : ""}`;
   } catch (err) {
     $("conversationStatus").textContent = "대화 목록을 불러오지 못했습니다.";
     setChildren($("conversationList"), [el("div", { className: "empty", text: err.message })]);
@@ -28,7 +36,7 @@ export async function loadMoreConversations() {
 
 export function renderConversations() {
   const q = $("conversationSearchInput").value.trim().toLowerCase();
-  const conversations = state.conversations.filter((conv) => conversationText(conv).includes(q));
+  const conversations = conversationList().filter((conv) => conversationText(conv).includes(q));
   setChildren(
     $("conversationList"),
     conversations.length ? conversations.map(conversationCard) : [el("div", { className: "empty", text: "아직 대화가 없습니다." })],
@@ -36,13 +44,12 @@ export function renderConversations() {
 }
 
 export function findConversation(conversationId) {
-  return state.conversations.find((conv) => conv.id === conversationId);
+  return state.conversations.byId.get(conversationId) || null;
 }
 
 export async function deleteConversation(conversationId) {
   const result = await api(`/api/conversations/${encodeURIComponent(conversationId)}`, { method: "DELETE" });
-  state.conversations = state.conversations.filter((conv) => conv.id !== conversationId);
-  renderConversations();
+  conversationDeleted(conversationId);
   return result;
 }
 
@@ -52,21 +59,19 @@ export async function updateConversationTitle(conversationId, title) {
     body: JSON.stringify({ title }),
   });
   const nextTitle = result?.title || title;
-  const conv = findConversation(conversationId);
-  if (conv) conv.title = nextTitle;
-  renderConversations();
+  conversationTitleChanged(conversationId, nextTitle);
   return nextTitle;
 }
 
 function conversationText(conv) {
-  const plot = state.plots.find((p) => p.id === conv.plot_id);
-  const user = state.users.get(conv.user_profile_id);
-  return [conv.title, conv.id, conv.plot_id, conv.user_profile_id, plot?.title, userProfileName(user)].filter(Boolean).join(" ").toLowerCase();
+  const plot = state.catalog.plots.byId.get(conv.plotId);
+  const user = state.catalog.users.byId.get(conv.userProfileId);
+  return [conv.title, conv.id, conv.plotId, conv.userProfileId, plot?.title, userProfileName(user)].filter(Boolean).join(" ").toLowerCase();
 }
 
 function conversationCard(conv) {
-  const plot = state.plots.find((p) => p.id === conv.plot_id);
-  const user = state.users.get(conv.user_profile_id);
+  const plot = state.catalog.plots.byId.get(conv.plotId);
+  const user = state.catalog.users.byId.get(conv.userProfileId);
   const title = conv.title || plot?.title || "제목 없는 대화";
   return el("article", { className: "card conversation-card", dataset: { conversation: conv.id } }, [
     el("div", { className: "card-head" }, [
@@ -87,9 +92,13 @@ function conversationCard(conv) {
     ]),
     el("div", { className: "conversation-meta-list" }, [
       conversationMeta("사용자 프로필", userProfileName(user) || "미선택"),
-      conversationMeta("대화 시작일시", formatConversationTime(conv.created_at)),
+      conversationMeta("대화 시작일시", formatConversationTime(conv.createdAt)),
     ]),
   ]);
+}
+
+function conversationList() {
+  return state.conversations.order.map((id) => state.conversations.byId.get(id)).filter(Boolean);
 }
 
 function conversationMeta(label, value) {

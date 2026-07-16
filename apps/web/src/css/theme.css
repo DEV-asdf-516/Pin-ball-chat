@@ -5,6 +5,7 @@
   --surface: #ffffff;
   --surface-raised: #f1f4f3;
   --border: #d8dfdc;
+  --scrollbar-thumb: #c3ccc8;
   --text: #17201d;
   --text-2: #52605b;
   --muted: #7a8782;
@@ -29,6 +30,7 @@
   --surface: #1d2421;
   --surface-raised: #25302c;
   --border: #35413d;
+  --scrollbar-thumb: #56615d;
   --text: #eef5f1;
   --text-2: #b5c2bd;
   --muted: #84918c;

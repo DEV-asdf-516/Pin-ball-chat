@@ -354,6 +354,16 @@
   margin-bottom: 16px;
 }
 
+#plotDetail {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+}
+
+#plotDetail section {
+  margin-bottom: 0;
+}
+
 .detail h2 {
   margin: 0 0 8px;
   font-size: 20px;
@@ -380,6 +390,10 @@
 }
 
 .character-source {
+  max-height: none;
+}
+
+.plot-source {
   max-height: none;
 }
 
@@ -587,10 +601,10 @@
 }
 
 .variant-nav .icon-action {
-  width: 22px;
-  min-width: 22px;
-  min-height: 22px;
-  font-size: 15px;
+  width: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  font-size: 12px;
 }
 
 .actions button {
@@ -845,6 +859,39 @@
   gap: 12px;
 }
 
+.form-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  align-self: end;
+}
+
+[data-form-panel] {
+  display: grid;
+  gap: 12px;
+}
+
+.form-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.form-tabs button {
+  min-height: 36px;
+  background: transparent;
+  color: var(--text-2);
+}
+
+.form-tabs button.active {
+  background: var(--surface);
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .form-card {
   display: grid;
   gap: 12px;
@@ -898,6 +945,64 @@
   object-fit: cover;
 }
 
+.intro-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.intro-blocks {
+  display: grid;
+  gap: 10px;
+}
+
+.intro-block {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.intro-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.intro-role-toggle {
+  display: flex;
+  gap: 6px;
+}
+
+.intro-role-toggle button,
+.intro-remove-btn {
+  min-height: 32px;
+}
+
+.intro-role-toggle button {
+  background: var(--surface-raised);
+  color: var(--text-2);
+}
+
+.intro-role-toggle button.active {
+  background: var(--accent-2);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.intro-remove-btn {
+  flex: 0 0 32px;
+  padding: 0;
+  color: var(--text-2);
+}
+
+.intro-add-btn {
+  min-height: 38px;
+  font-size: 22px;
+  color: var(--text-2);
+}
+
 .file-input {
   position: absolute;
   width: 1px;
@@ -909,7 +1014,15 @@
 .plot-manage-detail {
   display: grid;
   gap: 0;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   padding-top: 0;
+}
+
+.plot-manage-list-view {
+  min-height: 0;
+  overflow: auto;
 }
 
 .plot-manage-list {
@@ -968,23 +1081,23 @@
   min-height: 0;
   padding-top: 4px;
   align-content: stretch;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 #plotManageEditMount {
+  display: grid;
   height: 100%;
   min-height: 0;
 }
 
-.plot-manage-edit .field:has(#plotManageSource) {
+.plot-manage-edit [data-form-panel] {
   min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
-  align-content: stretch;
+  align-content: start;
+  overflow: auto;
 }
 
 #plotManageSource {
   height: auto;
-  min-height: 0;
   max-height: none;
   overflow: auto;
 }

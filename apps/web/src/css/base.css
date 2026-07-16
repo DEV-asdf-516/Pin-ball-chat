@@ -75,6 +75,57 @@ textarea {
   resize: none;
   max-height: var(--composer-max-height, 136px);
   line-height: 1.45;
-  padding: 10px 11px;
+  padding: 10px 16px 10px 11px;
   overflow-y: auto;
+  scrollbar-gutter: stable;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+  scrollbar-width: thin;
+}
+
+textarea::-webkit-scrollbar,
+.source::-webkit-scrollbar,
+.markdown pre::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+textarea::-webkit-scrollbar-track,
+.source::-webkit-scrollbar-track,
+.markdown pre::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.source,
+.markdown pre {
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+  scrollbar-width: thin;
+}
+
+textarea::-webkit-scrollbar-thumb,
+.source::-webkit-scrollbar-thumb,
+.markdown pre::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 999px;
+  border: 2px solid var(--input-bg);
+}
+
+.list,
+.detail,
+.messages,
+.panel,
+.form-page,
+[data-form-panel],
+.plot-manage-list-view {
+  scrollbar-width: none;
+}
+
+.list::-webkit-scrollbar,
+.detail::-webkit-scrollbar,
+.messages::-webkit-scrollbar,
+.panel::-webkit-scrollbar,
+.form-page::-webkit-scrollbar,
+[data-form-panel]::-webkit-scrollbar,
+.plot-manage-list-view::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
