@@ -1,4 +1,3 @@
-import os
 from typing import AsyncIterator
 from urllib import parse
 
@@ -11,16 +10,10 @@ from ai.transport.http_errors import translate_http_errors
 from ai.specs import GenerateRequest
 from ai.providers.base import AIProvider
 from ai.transport.sse import aiter_sse_events
+from util.env_util import require_env
 from util.safe_util import get_safe_dict, get_safe_list
 
 _OK_FINISH_REASONS = ("STOP", "MAX_TOKENS", "FINISH_REASON_UNSPECIFIED")
-
-
-def _api_key() -> str:
-    api_key: str | None = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY is missing")
-    return api_key
 
 
 def to_gemini_payload(req: GenerateRequest) -> dict:
@@ -57,7 +50,7 @@ class GeminiProvider(AIProvider):
 
     def _url(self, req: GenerateRequest, endpoint: str, extra_query: str = "") -> str:
         model_id: str = parse.quote(req.model, safe="")
-        return f"{GEMINI_BASE_URL.rstrip('/')}/v1beta/models/{model_id}:{endpoint}?key={parse.quote(_api_key())}{extra_query}"
+        return f"{GEMINI_BASE_URL.rstrip('/')}/v1beta/models/{model_id}:{endpoint}?key={parse.quote(require_env('GEMINI_API_KEY'))}{extra_query}"
 
     async def stream(self, req: GenerateRequest) -> AsyncIterator[str]:
         emitted_text: str = ""
@@ -88,7 +81,7 @@ class GeminiProvider(AIProvider):
                 raise EmptyOutputError("gemini produced no content")
 
     async def list_models(self) -> list[str]:
-        url: str = f"{GEMINI_BASE_URL.rstrip('/')}/v1beta/models?key={parse.quote(_api_key())}"
+        url: str = f"{GEMINI_BASE_URL.rstrip('/')}/v1beta/models?key={parse.quote(require_env('GEMINI_API_KEY'))}"
         client: httpx.AsyncClient = HttpClient().get()
         async with translate_http_errors(self.name):
             res: httpx.Response = await client.get(url, timeout=GEMINI_TIMEOUT)

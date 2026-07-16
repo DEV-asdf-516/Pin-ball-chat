@@ -1,4 +1,3 @@
-import os
 from typing import AsyncIterator
 
 import httpx
@@ -10,17 +9,11 @@ from ai.transport.http_errors import translate_http_errors
 from ai.specs import GenerateRequest
 from ai.providers.base import AIProvider
 from ai.transport.sse import aiter_sse_events
+from util.env_util import require_env
 from util.safe_util import get_safe_dict
 
 
 _ENDPOINT = OPENAI_BASE_URL.rstrip("/") + "/v1/responses"
-
-
-def _api_key() -> str:
-    api_key: str | None = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise ValueError("OPENAI_API_KEY is missing")
-    return api_key
 
 
 def to_openai_payload(req: GenerateRequest) -> dict:
@@ -38,7 +31,7 @@ class OpenAIProvider(AIProvider):
     name = "openai"
 
     def _headers(self) -> dict:
-        return {"Content-Type": "application/json", "Authorization": f"Bearer {_api_key()}"}
+        return {"Content-Type": "application/json", "Authorization": f"Bearer {require_env('OPENAI_API_KEY')}"}
 
     async def stream(self, req: GenerateRequest) -> AsyncIterator[str]:
         payload: dict = to_openai_payload(req)

@@ -1,4 +1,3 @@
-import os
 from typing import AsyncIterator
 
 import httpx
@@ -10,17 +9,11 @@ from ai.transport.http_errors import translate_http_errors
 from ai.specs import GenerateRequest
 from ai.providers.base import AIProvider
 from ai.transport.sse import aiter_sse_events
+from util.env_util import require_env
 from util.safe_util import get_safe_dict
 
 
 _ENDPOINT = ANTHROPIC_BASE_URL.rstrip("/") + "/v1/messages"
-
-
-def _api_key() -> str:
-    api_key: str | None = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise ValueError("ANTHROPIC_API_KEY is missing")
-    return api_key
 
 
 def to_anthropic_payload(req: GenerateRequest) -> dict:
@@ -41,7 +34,7 @@ class AnthropicProvider(AIProvider):
         return {
             "anthropic-version": ANTHROPIC_API_VERSION,
             "content-type": "application/json",
-            "x-api-key": _api_key(),
+            "x-api-key": require_env("ANTHROPIC_API_KEY"),
         }
 
     async def stream(self, req: GenerateRequest) -> AsyncIterator[str]:
