@@ -19,7 +19,8 @@
 ## 플롯
 - 제작: 사용자는 기존 character/user를 선택하지 않음. 프론트가 ID 자동 생성 →
   `POST /api/characters` 후 그 `characterId`로 `POST /api/plots`.
-- 프사는 파일 입력 → data URL(`avatarUrl`)로 저장. URL 직접 입력 노출 금지.
+- 프사는 파일 입력 → 캐릭터 생성/수정 후 `POST /api/uploads/character/{id}` multipart 업로드.
+  URL 직접 입력 노출 금지, FormData `Content-Type` 수동 설정 금지.
 - 장르는 8개 고정 버튼(로맨스/힐링/드라마/얀데레/판타지/액션/미스터리/호러), 최대 2개.
 - 관리는 리스트 → 편집 폼, `PUT`/`DELETE /api/plots/{id}`.
 

@@ -150,8 +150,8 @@ def delete_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, item_id: st
             raise ValueError(f"{kind} {item_id} is referenced by an existing {ref_kind}")
 
     delete(conn, WriteQuery.by_id(spec, item_id))
-    
+
     if path.exists():
         path.unlink()
-    
+
     return {"id": item_id, "deleted": True}

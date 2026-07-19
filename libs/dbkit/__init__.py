@@ -1,5 +1,4 @@
-from core.db.sqlite import DATA_ROOT, DB_PATH, ROOT, TABLE_NAMES, connect, init_db
-from dbkit import (
+from dbkit.specs import (
     Bind,
     CursorClause,
     CursorQuery,
@@ -15,12 +14,16 @@ from dbkit import (
     RawSQL,
     TableSpec,
     WriteQuery,
+)
+from dbkit.query import (
+    connect,
     delete,
     exists,
     fetch_all,
     fetch_one,
     find_all,
     find_one,
+    init_db,
     insert,
     new_id,
     paginate,
@@ -45,10 +48,6 @@ __all__ = [
     "RawSQL",
     "TableSpec",
     "WriteQuery",
-    "DATA_ROOT",
-    "DB_PATH",
-    "ROOT",
-    "TABLE_NAMES",
     "connect",
     "delete",
     "exists",

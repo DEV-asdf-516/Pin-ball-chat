@@ -25,6 +25,7 @@ class CursorClause(StrEnum):
     WHERE = "WHERE"
     AND = "AND"
 
+
 @dataclass(frozen=True)
 class CursorQuery:
     # paginate()에 넘기는 raw SQL + 파라미터 묶음.
@@ -73,11 +74,27 @@ class _Query:
         return cls(spec, where=Bind({(column or spec.conflict_col): value}))
 
 
+class Direction(StrEnum):
+    # OrderBy.direction — ASC가 기본이라 렌더링 시(OrderBy.__str__) 생략된다.
+    ASC = "ASC"
+    DESC = "DESC"
+
+
+@dataclass(frozen=True)
+class OrderBy:
+    # ReadQuery.order_by에 넘기는 정렬 컬럼 하나. 튜플로 여러 개 이어붙이면 다중 컬럼 정렬이 된다.
+    column: str
+    direction: Direction = Direction.ASC
+
+    def __str__(self) -> str:
+        return self.column if self.direction is Direction.ASC else f"{self.column} {self.direction}"
+
+
 @dataclass(frozen=True)
 class ReadQuery(_Query):
     # find_one/find_all/exists에 넘기는 조회 조건 묶음.
     where: Bind = field(default_factory=Bind)
-    order_by: str = "id"
+    order_by: tuple[OrderBy, ...] = (OrderBy("id"),)
 
 
 @dataclass(frozen=True)

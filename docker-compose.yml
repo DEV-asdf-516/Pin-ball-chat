@@ -8,7 +8,8 @@ services:
 
   api:
     build:
-      context: ./apps/api
+      context: .
+      dockerfile: apps/api/Dockerfile
     ports:
       - "8080:8080"
     environment:
@@ -30,13 +31,35 @@ services:
     depends_on:
       - api
 
-  trainer:
-    build:
-      context: ./trainer
-    profiles:
-      - trainer
+  trainer-api:
+    build: { context: ., dockerfile: trainer/api/Dockerfile }
+    profiles: [trainer]
+    ports: ["8090:8090"]
     environment:
-      DB_PATH: /workspace/data/pinballchat.sqlite
+      TRAINER_ROOT: /workspace/trainer
+      TRAINER_DB_PATH: /workspace/trainer/data/trainer.sqlite
+      APP_DB_PATH: /workspace/data/pinballchat.sqlite
     volumes:
-      - ./data:/workspace/data
       - ./trainer:/workspace/trainer
+      - ./data:/workspace/data:ro
+
+  trainer-worker:
+    build: { context: ., dockerfile: trainer/worker/Dockerfile }
+    profiles: [trainer]
+    environment:
+      TRAINER_ROOT: /workspace/trainer
+      TRAINER_DB_PATH: /workspace/trainer/data/trainer.sqlite
+      OLLAMA_HOST: http://host.docker.internal:11434
+      LLAMA_CPP_DIR: /opt/llama.cpp
+      RUNNER_BACKENDS: cuda
+    volumes:
+      - ./trainer:/workspace/trainer
+      - ./data:/workspace/data:ro
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

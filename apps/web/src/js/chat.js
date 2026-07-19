@@ -1,4 +1,4 @@
-import { api, streamSse } from "./api.js";
+import { api, apiBase, streamSse } from "./api.js";
 import { activeConversation, conversationProfileChanged, messagesLoaded, userProfileDeleted, userProfileUpdated } from "./actions.js";
 import { $, closeDropdowns, confirmDialog, el, parseJson, setChildren, toast, toggleDropdown } from "./dom.js";
 import { renderMarkdown } from "./markdown.js";
@@ -449,7 +449,7 @@ function safeProfileImage(value) {
   if (typeof value !== "string" || !value) return "";
   if (value.startsWith("data:image/")) return value;
   try {
-    const url = new URL(value, window.location.href);
+    const url = new URL(value, apiBase());
     return ["http:", "https:"].includes(url.protocol) ? url.href : "";
   } catch {
     return "";
@@ -474,7 +474,6 @@ async function stream(path, body, bubble, userNode = null, variants = []) {
     if (eventName === "token") {
       const content = (bubble.dataset.content || "") + data.content;
       renderAssistantStream(bubble, content);
-      $("messages").scrollTop = $("messages").scrollHeight;
     }
     if (eventName === "done") {
       if (variants.length) {
@@ -656,7 +655,7 @@ function actionNode(id, turn, variants = [], variantIndex = Math.max(0, variants
       id ? menuAction("edit-generation", "편집", { gen: id }) : null,
       menuAction("copy", "복사"),
       messageId ? menuAction("delete-message", "삭제", { message: messageId }, "danger") : null,
-      messageId ? menuAction("batch-delete-message", "이후 삭제", { message: messageId }, "danger") : null,
+      messageId ? menuAction("batch-delete-message", "이 메시지부터 삭제", { message: messageId }, "danger") : null,
     ]) : null,
   ]);
 }
@@ -683,7 +682,7 @@ function userActionNode(messageId) {
       messageId ? menuAction("edit-user", "편집", { message: messageId }) : null,
       menuAction("copy", "복사"),
       messageId ? menuAction("delete-message", "삭제", { message: messageId }, "danger") : null,
-      messageId ? menuAction("batch-delete-message", "이후 삭제", { message: messageId }, "danger") : null,
+      messageId ? menuAction("batch-delete-message", "이 메시지부터 삭제", { message: messageId }, "danger") : null,
     ]),
   ]);
 }

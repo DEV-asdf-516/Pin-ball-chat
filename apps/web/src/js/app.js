@@ -1,6 +1,6 @@
-import { api } from "./api.js";
+import { api, apiBase } from "./api.js";
 import { activeConversation, conversationActivated, messagesLoaded } from "./actions.js";
-import { createCharacter, createPlot, loadCatalog, loadMorePlots, openPlot, renderPlots } from "./catalog.js";
+import { createCharacter, createPlot, loadCatalog, loadMorePlots, openPlot, renderPlots, uploadCharacterAvatar } from "./catalog.js";
 import { bindUserProfileSheet, cancelComposerEdit, canResendEditedUserMessage, canSendEmptyMessage, deleteMessage, deleteMessagesFrom, editGeneration, editUserMessage, hydrateTurnGenerations, loadMessages, markLastUserMessage, messageNode, needsUserProfileSelection, openUserProfileSheet, promptUserProfileIfNeeded, regenerate, resendEditedUserMessage, saveComposerEdit, sendMessage, showAssistantVariant, updateComposer } from "./chat.js";
 import { keys } from "./config.js";
 import * as conversations from "./conversations.js";
@@ -173,14 +173,14 @@ function bindPlotCreate() {
     const id = makeCatalogId();
     const characterId = makeCatalogId();
     try {
-      await createCharacter({
+      const character = await createCharacter({
         id: characterId,
         type: "character",
         name: characterName,
         displayName: characterName,
-        avatarUrl: getCreateAvatarUrl(),
         sourceText: characterSource,
       });
+      await uploadCreateAvatarIfNeeded(character.id || characterId);
       const intro = introValue("plotCreateIntroEditor");
       const plot = await createPlot({
         id,
@@ -598,7 +598,7 @@ function makeCatalogId() {
 function renderCreateAvatarPreview() {
   const preview = $("plotCreateAvatarPreview");
   if (!preview) return;
-  const src = safeImageUrl(getCreateAvatarUrl());
+  const src = safeImageUrl(getCreateAvatarPreviewUrl());
   preview.replaceChildren();
   preview.classList.toggle("has-image", Boolean(src));
   if (!src) {
@@ -610,7 +610,9 @@ function renderCreateAvatarPreview() {
 
 function clearCreateAvatarPreview() {
   const preview = $("plotCreateAvatarPreview");
-  if (preview) preview.dataset.avatarUrl = "";
+  if (preview) preview.dataset.previewUrl = "";
+  const input = $("plotCreateCharacterAvatarFile");
+  if (input) input.value = "";
   renderCreateAvatarPreview();
 }
 
@@ -618,32 +620,42 @@ function readCreateAvatarFile() {
   const file = $("plotCreateCharacterAvatarFile").files?.[0];
   const preview = $("plotCreateAvatarPreview");
   if (!file || !preview) {
-    if (preview) preview.dataset.avatarUrl = "";
+    if (preview) preview.dataset.previewUrl = "";
     renderCreateAvatarPreview();
     return;
   }
   const reader = new FileReader();
   reader.onload = () => {
-    preview.dataset.avatarUrl = typeof reader.result === "string" ? reader.result : "";
+    preview.dataset.previewUrl = typeof reader.result === "string" ? reader.result : "";
     renderCreateAvatarPreview();
   };
   reader.onerror = () => {
-    preview.dataset.avatarUrl = "";
+    preview.dataset.previewUrl = "";
     renderCreateAvatarPreview();
     toast("이미지를 읽지 못했습니다");
   };
   reader.readAsDataURL(file);
 }
 
-function getCreateAvatarUrl() {
-  return $("plotCreateAvatarPreview")?.dataset.avatarUrl || "";
+function getCreateAvatarPreviewUrl() {
+  return $("plotCreateAvatarPreview")?.dataset.previewUrl || "";
+}
+
+async function uploadCreateAvatarIfNeeded(characterId) {
+  const file = $("plotCreateCharacterAvatarFile")?.files?.[0];
+  if (!file) return;
+  try {
+    await uploadCharacterAvatar(characterId, file);
+  } catch (err) {
+    toast(`이미지 업로드 실패: ${err.message}`);
+  }
 }
 
 function safeImageUrl(value) {
   if (typeof value !== "string" || !value) return "";
   if (value.startsWith("data:image/")) return value;
   try {
-    const url = new URL(value, window.location.href);
+    const url = new URL(value, apiBase());
     return ["http:", "https:"].includes(url.protocol) ? url.href : "";
   } catch {
     return "";

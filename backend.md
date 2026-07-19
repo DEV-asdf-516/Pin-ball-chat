@@ -51,6 +51,11 @@
 ## 검증
 ```bash
 python -m compileall -q src
-PYTHONPATH=src python -c "from server.app import create_app; print(create_app().title)"
+PYTHONPATH=src:../../libs python -c "from server.app import create_app; print(create_app().title)"
 ```
 테스트가 있으면 전체 실행.
+
+## core/db와 libs/dbkit
+- `TableSpec`/`Bind`/`ReadQuery`/`WriteQuery`/`Eq`/`Ne`/`Gt`/`Lt`/`In`/`NotIn`/`CursorQuery`와 쿼리 빌더 함수(`find_one`/`find_all`/`insert`/`upsert`/`update`/`delete`/...)는 `libs/dbkit`(repo 공통 모듈)에 있고, `core.db`가 그대로 재노출한다 — `domain/**`의 import(`from core.db import ...`)는 안 바뀐다.
+- `core/db/sqlite.py`에는 pinballchat 전용 부분만 남는다: `TABLE_NAMES`, `SCHEMA_DDL` 연결, `ROOT`/`DATA_ROOT`/`DB_PATH` 경로 계산.
+- `libs/dbkit` 자체는 스키마·경로를 모르는 순수 쿼리 엔진이라 trainer 등 다른 서비스에서도 재사용 가능하다.

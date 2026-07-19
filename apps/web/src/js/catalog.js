@@ -1,4 +1,4 @@
-import { api } from "./api.js";
+import { api, apiBase, uploadFile } from "./api.js";
 import { keys } from "./config.js";
 import { $, el, parseJson, setChildren } from "./dom.js";
 import { loadCursorPage } from "./paging.js";
@@ -81,6 +81,12 @@ export async function updateCharacter(id, data) {
     method: "PUT",
     body: JSON.stringify(data),
   });
+  upsertCatalogItem("chars", character);
+  return character;
+}
+
+export async function uploadCharacterAvatar(id, file) {
+  const character = await uploadFile(`/api/uploads/character/${encodeURIComponent(id)}`, file);
   upsertCatalogItem("chars", character);
   return character;
 }
@@ -242,7 +248,7 @@ function safeImageUrl(value) {
   if (typeof value !== "string" || !value) return "";
   if (value.startsWith("data:image/")) return value;
   try {
-    const url = new URL(value, window.location.href);
+    const url = new URL(value, apiBase());
     return ["http:", "https:"].includes(url.protocol) ? url.href : "";
   } catch {
     return "";

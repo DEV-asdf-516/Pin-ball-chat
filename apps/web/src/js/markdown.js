@@ -110,7 +110,7 @@ function paragraph(text) {
 
 function inlineNodes(text) {
   const nodes = [];
-  const pattern = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\n]+\*)/g;
+  const pattern = /(`[^`\n]+`|\*\*[^*]+?\*\*|\*[^*]+?\*)/g;
   let cursor = 0;
   for (const match of text.matchAll(pattern)) {
     if (match.index > cursor) nodes.push(document.createTextNode(text.slice(cursor, match.index)));

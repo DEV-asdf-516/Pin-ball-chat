@@ -20,6 +20,20 @@ export async function api(path, options = {}) {
   return res.json();
 }
 
+export async function uploadFile(path, file) {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(apiBase() + path, { method: "POST", body: form });
+  if (!res.ok) {
+    let body = {};
+    try {
+      body = await res.json();
+    } catch {}
+    throw new Error(errorMessage(body, res.statusText));
+  }
+  return res.json();
+}
+
 export async function streamSse(path, body, onEvent) {
   const res = await fetch(apiBase() + path, {
     method: "POST",

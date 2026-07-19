@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from server.routes import characters, conversations, generations, health, models, plots, preferences, user_profiles
+from server.routes import characters, conversations, generations, health, models, plots, preferences, uploads, user_profiles
 
 
 def register_routes(app: FastAPI):
@@ -12,3 +12,4 @@ def register_routes(app: FastAPI):
     app.include_router(conversations.router)
     app.include_router(generations.router)
     app.include_router(models.router)
+    app.include_router(uploads.router)

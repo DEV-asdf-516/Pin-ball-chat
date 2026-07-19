@@ -1,0 +1,13 @@
+backend: mlx
+base_model: mlx-community/gemma-4-e2b-it-4bit
+training:
+  iters: 50
+  batch_size: 1
+  learning_rate: 0.0001
+  max_seq_length: 2048
+  num_layers: 16
+  grad_checkpoint: true
+lora:
+  rank: 16
+  alpha: 32
+  dropout: 0.05

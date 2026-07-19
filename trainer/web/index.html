@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PinballChat Trainer</title>
+    <link rel="stylesheet" href="/web/style.css">
+  </head>
+  <body>
+    <main class="page-shell">
+      <header class="page-header">
+        <div class="brand">
+          <svg class="brand-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 15.5V4.5h12v11H4Z"/><path d="M7 8h6M7 11h4"/></svg>
+          <h1>PinballChat Trainer</h1>
+        </div>
+        <nav class="tabs" aria-label="Trainer tabs">
+          <button id="datasets-tab" type="button" class="tab-button" data-tab="datasets" aria-selected="true">데이터셋</button>
+          <button type="button" class="tab-button" data-tab="training" aria-selected="false">학습</button>
+          <button type="button" class="tab-button" data-tab="runs" aria-selected="false">실행 이력</button>
+        </nav>
+      </header>
+
+      <section id="error-banner" class="error-banner" role="alert" hidden>
+        <strong id="error-summary"></strong>
+        <span id="error-detail" class="technical-detail"></span>
+      </section>
+
+      <section id="datasets" class="tab-panel dataset-tab" aria-labelledby="datasets-tab">
+        <section class="card dataset-overview">
+          <div class="card-heading">
+            <h2>데이터셋 목록</h2>
+            <p>학습에 사용할 수집 데이터셋과 현재 행 수를 확인합니다.</p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>name</th><th>source</th><th>format</th><th>rows</th><th>created_at</th></tr></thead>
+              <tbody id="dataset-list"><tr><td colspan="5" class="loading-cell">불러오는 중…</td></tr></tbody>
+            </table>
+          </div>
+          <p id="invalid-datasets" class="card-note" hidden></p>
+        </section>
+
+        <div class="collection-grid">
+          <section class="card collection-card">
+            <div class="card-heading collection-heading">
+              <svg class="card-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4.5h12v8H8l-4 3v-11Z"/><path d="M7 8h6M7 11h4"/></svg>
+              <h2>앱 대화에서 가져오기</h2>
+              <p>운영 앱의 대화 기록을 새 데이터셋으로 내보냅니다.</p>
+            </div>
+            <form id="export-form" class="stack-form">
+              <label>데이터셋 이름<input name="name" required pattern="[a-z0-9][a-z0-9-]{1,62}" placeholder="external-rp-v1"></label>
+              <div class="form-row">
+                <label>형식<select name="format"><option value="chat">chat</option><option value="preference">preference</option></select></label>
+                <label>생성 모델<input name="generated_by" required placeholder="qwen3:4b"></label>
+              </div>
+              <button class="primary-button" type="submit">Export</button>
+            </form>
+            <p id="export-feedback" class="feedback" aria-live="polite"></p>
+          </section>
+
+          <section class="card collection-card">
+            <div class="card-heading collection-heading">
+              <svg class="card-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 13V3M6.5 6.5 10 3l3.5 3.5M4 12.5v3h12v-3"/></svg>
+              <h2>파일 업로드</h2>
+              <p>외부 JSONL 파일을 검증 후 데이터셋으로 등록합니다.</p>
+            </div>
+            <form id="import-form" class="stack-form">
+              <label>JSONL 파일<input name="file" type="file" accept=".jsonl,application/jsonl" required></label>
+              <div class="form-row">
+                <label>데이터셋 이름<input name="name" required pattern="[a-z0-9][a-z0-9-]{1,62}" placeholder="external-rp-v1"></label>
+                <label>형식<select name="format"><option value="chat">chat</option><option value="preference">preference</option></select></label>
+              </div>
+              <button class="primary-button" type="submit">Import</button>
+            </form>
+            <p id="import-feedback" class="feedback" aria-live="polite"></p>
+          </section>
+
+          <section class="card collection-card manual-card">
+            <div class="card-heading collection-heading">
+              <svg class="card-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="m4 14.5-.5 2 2-.5L15 6.5 13.5 5 4 14.5ZM12.5 4l1.5-1.5 2 2L14.5 6"/></svg>
+              <h2>직접 작성</h2>
+              <p>시스템 지시와 여러 사용자·assistant 턴을 한 예시로 저장합니다.</p>
+            </div>
+            <form id="manual-form" class="stack-form">
+              <label>대상 데이터셋<input name="dataset" required pattern="[a-z0-9][a-z0-9-]{1,62}" placeholder="external-rp-v1"></label>
+              <label>system<textarea name="system" placeholder="캐릭터와 대화 규칙을 입력하세요."></textarea></label>
+              <div id="manual-turns" class="turn-list" aria-live="polite"></div>
+              <label>user<textarea name="user" required placeholder="사용자 메시지"></textarea></label>
+              <label>assistant<textarea name="assistant" required placeholder="assistant 응답"></textarea></label>
+              <div class="button-row">
+                <button type="button" id="add-turn" class="secondary-button">턴 추가</button>
+                <button type="submit" class="primary-button">저장</button>
+              </div>
+            </form>
+            <p id="manual-feedback" class="feedback" aria-live="polite"></p>
+          </section>
+        </div>
+      </section>
+
+      <section id="training" class="tab-panel" hidden>
+        <section class="card training-card">
+          <div class="card-heading">
+            <h2>학습 실행</h2>
+            <p>chat 데이터셋과 recipe를 선택해 학습 작업을 대기열에 추가합니다.</p>
+          </div>
+          <form id="training-form" class="stack-form">
+            <fieldset>
+              <legend>데이터셋 선택</legend>
+              <div id="training-datasets" class="dataset-choice-list"><p class="loading-text">불러오는 중…</p></div>
+            </fieldset>
+            <div class="form-row training-fields">
+              <label>recipe<select id="recipe" name="recipe"></select></label>
+              <label>output_name<input id="output-name" name="output_name" required pattern="[a-z0-9][a-z0-9-]{1,62}" placeholder="pinball-rp-v1"></label>
+            </div>
+            <p id="output-name-error" class="inline-error" hidden>소문자·숫자·하이픈으로 2~63자를 입력하세요.</p>
+            <p id="training-summary" class="selection-summary">선택됨: 0개 데이터셋 · 0 rows</p>
+            <div class="button-row">
+              <button class="primary-button" type="submit">학습 시작</button>
+            </div>
+          </form>
+          <p id="training-feedback" class="feedback" aria-live="polite"></p>
+        </section>
+      </section>
+
+      <section id="runs" class="tab-panel" hidden>
+        <section class="card">
+          <div class="card-heading">
+            <h2>실행 이력</h2>
+            <p>학습과 Ollama 등록 작업의 상태를 5초마다 확인합니다.</p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>id</th><th>type</th><th>status</th><th>output_name</th><th>created_at</th></tr></thead>
+              <tbody id="run-list"><tr><td colspan="5" class="loading-cell">불러오는 중…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card log-card">
+          <div id="log-header" class="log-header">
+            <div class="card-heading"><h2>로그</h2><p>실행을 선택하면 최근 200줄을 3초마다 갱신합니다.</p></div>
+          </div>
+          <div id="log-empty" class="empty-state"><strong>실행을 선택하면 로그가 표시됩니다</strong><span>위 실행 이력에서 한 행을 선택하세요.</span></div>
+          <pre id="log" hidden></pre>
+          <p id="log-feedback" class="feedback" aria-live="polite"></p>
+        </section>
+      </section>
+    </main>
+    <script src="/web/app.js"></script>
+  </body>
+</html>

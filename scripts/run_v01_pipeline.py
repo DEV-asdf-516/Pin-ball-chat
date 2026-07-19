@@ -16,7 +16,7 @@ from core.db import connect, init_db
 from domain.catalog.importer import import_catalog
 from domain.conversations.writer import create_conversation
 from domain.specs import GenerationParams
-from domain.turns.writer import edit_generation, prepare_chat_stream, prepare_regenerate_stream, select_generation
+from domain.turns.writer import choose_generation, edit_generation, prepare_chat_stream, prepare_regenerate_stream
 from domain.turns.streaming import stream_response
 from domain.prompts.system.reader import build_prompt
 
@@ -59,7 +59,7 @@ async def main():
     second = await _drain_stream(prepared, params)
 
     with connect() as conn:
-        select_generation(conn, second["generationId"])
+        choose_generation(conn, second["generationId"])
         edit_generation(conn, second["generationId"], "문은 열려 있어. 네가 원하면, 나는 여기서 기다릴게.")
 
     with connect() as conn:

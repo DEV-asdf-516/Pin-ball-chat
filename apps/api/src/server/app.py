@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from ai.transport.http_client import HttpClient
 from core.db import DATA_ROOT, connect, init_db
@@ -37,4 +38,9 @@ def create_app():
     )
     register_error_handlers(app)
     register_routes(app)
+
+    uploads_dir = DATA_ROOT / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
+
     return app

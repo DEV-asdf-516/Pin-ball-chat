@@ -1,4 +1,5 @@
-import { deletePlot, findPlot, loadCharacter, loadMorePlots, updateCharacter, updatePlot } from "./catalog.js";
+import { apiBase } from "./api.js";
+import { deletePlot, findPlot, loadCharacter, loadMorePlots, updateCharacter, updatePlot, uploadCharacterAvatar } from "./catalog.js";
 import { $, confirmDialog, el, parseJson, setChildren, toast } from "./dom.js";
 import { activateFormTab, bindFormTabs } from "./form-tabs.js";
 import { bindGenrePicker, renderGenrePicker, selectedGenres } from "./genres.js";
@@ -111,9 +112,10 @@ async function saveManagedPlot() {
         type: "character",
         name: characterName,
         displayName: characterName,
-        avatarUrl: getManagedAvatarUrl(),
+        ...existingAvatarPayload(currentPlot?.character_id),
         sourceText: characterSource,
       });
+      await uploadManagedAvatarIfNeeded(charId);
     }
     const intro = introValue("plotManageIntroEditor");
     const plot = await updatePlot(id, {
@@ -196,7 +198,7 @@ function renderPlotEditForm(id) {
   ]);
   $("plotManageSource").value = plot?.source_text || "";
   $("plotManageCharacterSource").value = char?.source_text || "";
-  $("plotManageAvatarPreview").dataset.avatarUrl = existingAvatarUrl(char);
+  $("plotManageAvatarPreview").dataset.previewUrl = existingAvatarUrl(char);
   $("plotManageCharacterAvatarFile").onchange = readManagedAvatarFile;
   renderManagedAvatarPreview();
   renderGenrePicker("plotManageGenreList", plotData.genre || []);
@@ -262,14 +264,19 @@ function existingAvatarUrl(char) {
   return typeof value === "string" ? value : "";
 }
 
-function getManagedAvatarUrl() {
-  return $("plotManageAvatarPreview")?.dataset.avatarUrl || "";
+function existingAvatarPayload(characterId) {
+  const avatarUrl = existingAvatarUrl(state.catalog.chars.byId.get(characterId));
+  return avatarUrl ? { avatarUrl } : {};
+}
+
+function getManagedAvatarPreviewUrl() {
+  return $("plotManageAvatarPreview")?.dataset.previewUrl || "";
 }
 
 function renderManagedAvatarPreview() {
   const preview = $("plotManageAvatarPreview");
   if (!preview) return;
-  const src = safeImageUrl(getManagedAvatarUrl());
+  const src = safeImageUrl(getManagedAvatarPreviewUrl());
   preview.replaceChildren();
   preview.classList.toggle("has-image", Boolean(src));
   if (!src) {
@@ -285,7 +292,7 @@ function readManagedAvatarFile() {
   if (!file || !preview) return;
   const reader = new FileReader();
   reader.onload = () => {
-    preview.dataset.avatarUrl = typeof reader.result === "string" ? reader.result : "";
+    preview.dataset.previewUrl = typeof reader.result === "string" ? reader.result : "";
     renderManagedAvatarPreview();
   };
   reader.onerror = () => {
@@ -294,11 +301,21 @@ function readManagedAvatarFile() {
   reader.readAsDataURL(file);
 }
 
+async function uploadManagedAvatarIfNeeded(characterId) {
+  const file = $("plotManageCharacterAvatarFile")?.files?.[0];
+  if (!file) return;
+  try {
+    await uploadCharacterAvatar(characterId, file);
+  } catch (err) {
+    toast(`이미지 업로드 실패: ${err.message}`);
+  }
+}
+
 function safeImageUrl(value) {
   if (typeof value !== "string" || !value) return "";
   if (value.startsWith("data:image/")) return value;
   try {
-    const url = new URL(value, window.location.href);
+    const url = new URL(value, apiBase());
     return ["http:", "https:"].includes(url.protocol) ? url.href : "";
   } catch {
     return "";
