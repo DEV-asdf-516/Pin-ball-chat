@@ -1,4 +1,4 @@
-import { api } from "./api.js";
+import { api, apiBase } from "./api.js";
 import { conversationDeleted, conversationsLoaded, conversationTitleChanged } from "./actions.js";
 import { $, el, parseJson, setChildren } from "./dom.js";
 import { loadCursorPage } from "./paging.js";
@@ -71,11 +71,15 @@ function conversationText(conv) {
 
 function conversationCard(conv) {
   const plot = state.catalog.plots.byId.get(conv.plotId);
+  const character = state.catalog.chars.byId.get(plot?.character_id);
   const user = state.catalog.users.byId.get(conv.userProfileId);
   const title = conv.title || plot?.title || "제목 없는 대화";
   return el("article", { className: "card conversation-card", dataset: { conversation: conv.id } }, [
     el("div", { className: "card-head" }, [
-      el("h2", { text: title, dataset: { conversationTitleMenu: conv.id } }),
+      el("div", { className: "conversation-title" }, [
+        conversationAvatar(character, title),
+        el("h2", { text: title, dataset: { conversationTitleMenu: conv.id } }),
+      ]),
       el("div", { className: "menu-wrap" }, [
         el("button", {
           type: "button",
@@ -112,6 +116,28 @@ function userProfileName(user) {
   if (!user) return "";
   const profile = parseJson(user.profile_json);
   return profile.displayName || profile.display_name || user.name || profile.name || user.id;
+}
+
+function conversationAvatar(character, fallback) {
+  const src = safeImageUrl(parseJson(character?.profile_json).avatarUrl);
+  if (src) return el("img", { className: "conversation-avatar", attrs: { src, alt: "" } });
+  return el("div", { className: "conversation-avatar", text: characterName(character, fallback) });
+}
+
+function characterName(character, fallback) {
+  const profile = parseJson(character?.profile_json);
+  return (profile.displayName || profile.display_name || character?.name || fallback || "?").trim().slice(0, 1) || "?";
+}
+
+function safeImageUrl(value) {
+  if (typeof value !== "string" || !value) return "";
+  if (value.startsWith("data:image/")) return value;
+  try {
+    const url = new URL(value, apiBase());
+    return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+  } catch {
+    return "";
+  }
 }
 
 function formatConversationTime(value) {
