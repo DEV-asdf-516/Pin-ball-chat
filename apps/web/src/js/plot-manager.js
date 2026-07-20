@@ -178,7 +178,7 @@ function renderPlotEditForm(id) {
               text: "+",
               attrs: { for: "plotManageCharacterAvatarFile" },
             }),
-            el("input", { id: "plotManageCharacterAvatarFile", className: "file-input", type: "file", attrs: { accept: "image/*" } }),
+            el("input", { id: "plotManageCharacterAvatarFile", className: "file-input", type: "file", attrs: { accept: "image/png,image/jpeg,image/webp,image/gif" } }),
           ]),
           field("plotManageCharacterName", "캐릭터 명", el("input", { id: "plotManageCharacterName", value: characterName(char), attrs: { autocomplete: "off", maxlength: "40", placeholder: "" } })),
           field("plotManageCharacterSource", "캐릭터 설명", el("textarea", { id: "plotManageCharacterSource", text: char?.source_text || "", attrs: { rows: "8", placeholder: "" } })),
@@ -304,11 +304,7 @@ function readManagedAvatarFile() {
 async function uploadManagedAvatarIfNeeded(characterId) {
   const file = $("plotManageCharacterAvatarFile")?.files?.[0];
   if (!file) return;
-  try {
-    await uploadCharacterAvatar(characterId, file);
-  } catch (err) {
-    toast(`이미지 업로드 실패: ${err.message}`);
-  }
+  await uploadCharacterAvatar(characterId, file);
 }
 
 function safeImageUrl(value) {

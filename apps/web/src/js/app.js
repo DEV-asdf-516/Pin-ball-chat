@@ -644,11 +644,7 @@ function getCreateAvatarPreviewUrl() {
 async function uploadCreateAvatarIfNeeded(characterId) {
   const file = $("plotCreateCharacterAvatarFile")?.files?.[0];
   if (!file) return;
-  try {
-    await uploadCharacterAvatar(characterId, file);
-  } catch (err) {
-    toast(`이미지 업로드 실패: ${err.message}`);
-  }
+  await uploadCharacterAvatar(characterId, file);
 }
 
 function safeImageUrl(value) {

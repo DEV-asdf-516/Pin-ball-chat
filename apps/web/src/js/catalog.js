@@ -144,16 +144,17 @@ function plotHaystack(plot) {
 
 function plotCard(plot) {
   const char = state.catalog.chars.byId.get(plot.character_id);
-  return el("button", { className: "card", dataset: { plot: plot.id } }, [
-    el("div", { className: "plot-card-head" }, [
-      characterAvatar(char),
-      el("div", {}, [
-        el("h2", { text: plot.title || "제목 없는 플롯" }),
-        el("div", { className: "meta", text: characterName(char) || "캐릭터" }),
-      ]),
+  const genres = plotGenre(plot);
+  return el("button", { className: "card plot-card", dataset: { plot: plot.id } }, [
+    el("div", { className: "plot-card-media" }, [
+      characterAvatar(char, "plot-card-image"),
     ]),
-    el("div", { className: "tags" }, plotGenre(plot).map((g) => el("span", { className: "tag", text: g }))),
-    el("div", { className: "preview", text: sourcePreview(plot.source_text) }),
+    el("div", { className: `plot-card-content${genres.length ? " has-tags" : ""}` }, [
+      el("h2", { text: plot.title || "제목 없는 플롯" }),
+      el("div", { className: "meta", text: characterName(char) || "캐릭터" }),
+      el("div", { className: "tags" }, genres.map((g) => el("span", { className: "tag", text: g }))),
+      el("div", { className: "preview", text: sourcePreview(plot.source_text) }),
+    ]),
   ]);
 }
 
@@ -167,9 +168,9 @@ function renderDetail() {
     ]),
     el("section", {}, [
       el("h3", { text: "캐릭터 정보" }),
-      el("div", { className: "card" }, [
-        el("div", { className: "plot-card-head" }, [
-          characterAvatar(char),
+      el("div", { className: "card detail-character-card" }, [
+        characterAvatar(char, "detail-character-image"),
+        el("div", { className: "detail-character-summary" }, [
           el("div", {}, [
             el("strong", { text: characterName(char) || "캐릭터" }),
             el("div", { className: "meta", text: char ? "플롯 캐릭터" : "캐릭터 정보를 불러오는 중..." }),
@@ -234,10 +235,10 @@ function characterName(char) {
   return profile.displayName || profile.display_name || char.name || profile.name || "";
 }
 
-function characterAvatar(char) {
+function characterAvatar(char, className = "avatar-preview small") {
   const src = safeImageUrl(parseJson(char?.profile_json).avatarUrl);
-  if (!src) return el("div", { className: "avatar-preview small", text: characterInitial(char) });
-  return el("img", { className: "avatar-preview small", attrs: { src, alt: "" } });
+  if (!src) return el("div", { className, text: characterInitial(char) });
+  return el("img", { className, attrs: { src, alt: "" } });
 }
 
 function characterInitial(char) {
