@@ -112,7 +112,7 @@ def snapshot_text(system: str, messages: list[Message]) -> str:
     return system + "\n\n" + "\n".join(f"{m.role}: {m.content}" for m in messages)
 
 
-def build_prompt(conn: sqlite3.Connection, conversation_id: str, user_message: str) -> BuiltPrompt:
+def build_prompt(conn: sqlite3.Connection, conversation_id: str, user_message: str, exclude_turn_id: str | None = None) -> BuiltPrompt:
     # system_prompt.json에 정의된 관찰자 프롬프트 골격 위에, 이 conversation의 캐릭터/유저/플롯 데이터를 채워 넣는다.
     # TODO: preferences.json을 로어북처럼 쓰는 방식으로 나중에 다시 연결한다.
 
@@ -132,10 +132,17 @@ def build_prompt(conn: sqlite3.Connection, conversation_id: str, user_message: s
     user_body, _ = extract_ooc(render_value(user_source, ctx, warnings))
     plot_body, _ = extract_ooc(render_value(plot_source, ctx, warnings))
 
+    # regenerate 중엔 이 turn의 기존 candidate가 아직 rejected=1로 안 바뀐 상태라 active_messages_sql만으로는
+    # 안 걸러진다 — exclude_turn_id로 이 turn의 유저 메시지·이전 candidate를 recent에서 직접 빼고,
+    # 유저 메시지는 아래 current_input으로 다시 채운다.
     recent: list[sqlite3.Row] = fetch_all(
         conn,
-        RawSQL(active_messages_sql(("m.role", "m.content"), tail=f"LIMIT {RECENT_WINDOW}")),
-        params={"conversation_id": conversation_id},
+        RawSQL(active_messages_sql(
+            ("m.role", "m.content"),
+            extra_where="AND (:exclude_turn_id IS NULL OR m.turn_id IS NULL OR m.turn_id != :exclude_turn_id)",
+            tail=f"LIMIT {RECENT_WINDOW}",
+        )),
+        params={"conversation_id": conversation_id, "exclude_turn_id": exclude_turn_id},
     )
 
     story_body: str = "\n\n".join([
