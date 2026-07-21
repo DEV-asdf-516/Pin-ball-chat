@@ -34,11 +34,12 @@ export async function uploadFile(path, file) {
   return res.json();
 }
 
-export async function streamSse(path, body, onEvent) {
+export async function streamSse(path, body, onEvent, signal) {
   const res = await fetch(apiBase() + path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
   if (!res.ok) {
     const text = await res.text();

@@ -6,6 +6,7 @@ import { generationBody } from "./settings.js";
 import { state } from "./state.js";
 
 const NO_USER_PROFILE = "conversation has no user_profile set";
+let activeStreamAbort = null;
 
 export async function loadMessages(before) {
   const convId = activeConversation()?.id;
@@ -33,12 +34,14 @@ export async function sendMessage(message, options = {}) {
   }
   state.pendingUserResend = null;
   state.streaming = true;
+  const streamAbort = beginStreamAbort();
   updateComposer();
   const user = options.silentUser ? null : appendUserMessage(message);
   const assistant = appendAssistantStream();
   try {
-    await stream("/api/chat/stream", generationBody({ conversationId: activeConversation()?.id, message }), assistant, user);
+    await stream("/api/chat/stream", generationBody({ conversationId: activeConversation()?.id, message }), assistant, user, [], streamAbort.signal);
   } catch (err) {
+    if (isStreamAbort(err)) return;
     if (isUserProfileError(err)) {
       assistant.remove();
       openUserProfileSheet();
@@ -46,8 +49,7 @@ export async function sendMessage(message, options = {}) {
     }
     renderAssistantError(assistant, "응답 생성에 실패했습니다.\n" + err.message);
   } finally {
-    state.streaming = false;
-    updateComposer();
+    finishStreamAbort(streamAbort);
   }
 }
 
@@ -78,13 +80,19 @@ export async function regenerate(turnId, targetNode = null) {
     return;
   }
   state.streaming = true;
+  const streamAbort = beginStreamAbort();
   updateComposer();
   const assistant = targetNode || appendAssistantStream();
   const variants = assistantVariants(assistant);
   if (targetNode) renderAssistantStream(assistant, "", "", turnId, variants);
   try {
-    await stream(`/api/turns/${turnId}/regenerate/stream`, generationBody(), assistant, null, variants);
+    await stream(`/api/turns/${turnId}/regenerate/stream`, generationBody(), assistant, null, variants, streamAbort.signal);
   } catch (err) {
+    if (isStreamAbort(err)) {
+      if (targetNode) renderAssistantVariant(targetNode, variants.length - 1);
+      else assistant.remove();
+      return;
+    }
     if (isUserProfileError(err)) {
       if (!targetNode) assistant.remove();
       else renderAssistantVariant(assistant, variants.length - 1);
@@ -93,8 +101,7 @@ export async function regenerate(turnId, targetNode = null) {
     }
     renderAssistantError(assistant, "재생성에 실패했습니다.\n" + err.message);
   } finally {
-    state.streaming = false;
-    updateComposer();
+    finishStreamAbort(streamAbort);
   }
 }
 
@@ -283,6 +290,14 @@ export function needsUserProfileSelection() {
   return Boolean(conv && !conv.userProfileId);
 }
 
+export function cancelChatStream() {
+  if (!activeStreamAbort) return;
+  activeStreamAbort.abort();
+  activeStreamAbort = null;
+  state.streaming = false;
+  updateComposer();
+}
+
 export function messageNode(m) {
   const role = m.role === "user" ? "user" : "assistant";
   if (role === "user" && isControlMessage(m.content)) return null;
@@ -456,6 +471,42 @@ function safeProfileImage(value) {
   }
 }
 
+function chatCharacterAvatar() {
+  const character = activePlotCharacter();
+  const profile = parseJson(character?.profile_json);
+  const name = profile.displayName || profile.display_name || character?.name || "캐릭터";
+  const src = safeProfileImage(profile.avatarUrl);
+  return el("span", { className: "chat-character-avatar" }, [
+    src ? el("img", { attrs: { src, alt: "" } }) : el("span", { text: name.slice(0, 1) || "?" }),
+  ]);
+}
+
+function isPlotCharacterSpeaker(speaker) {
+  const character = activePlotCharacter();
+  const profile = parseJson(character?.profile_json);
+  const normalized = normalizeSpeakerName(speaker);
+  if (normalized === "{{char}}") return true;
+  return [character?.id, character?.name, profile.name, profile.displayName, profile.display_name]
+    .filter(Boolean)
+    .some((name) => normalizeSpeakerName(name) === normalized);
+}
+
+function activePlotCharacter() {
+  const plot = state.selectedPlot || state.catalog.plots.byId.get(activeConversation()?.plotId);
+  return state.catalog.chars.byId.get(plot?.character_id);
+}
+
+function activeCharacterName() {
+  const character = activePlotCharacter();
+  const profile = parseJson(character?.profile_json);
+  return profile.displayName || profile.display_name || character?.name || "캐릭터";
+}
+
+function activeUserName() {
+  const userProfileId = activeConversation()?.userProfileId;
+  return userProfileName(state.catalog.users.byId.get(userProfileId)) || "나";
+}
+
 function makeUserProfileId() {
   if (crypto.randomUUID) return crypto.randomUUID();
   return `user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -465,7 +516,7 @@ function isUserProfileError(err) {
   return String(err?.message || err).includes(NO_USER_PROFILE);
 }
 
-async function stream(path, body, bubble, userNode = null, variants = []) {
+async function stream(path, body, bubble, userNode = null, variants = [], signal) {
   await streamSse(path, body, (eventName, data) => {
     if (eventName === "start" && userNode && data.messageId) {
       userNode.replaceWith(userMessageNode(userNode.dataset.content || "", data.messageId, data.turnId || ""));
@@ -486,7 +537,24 @@ async function stream(path, body, bubble, userNode = null, variants = []) {
       bubble.classList.remove("streaming");
     }
     if (eventName === "error") throw new Error(data.message || data.error);
-  });
+  }, signal);
+}
+
+function beginStreamAbort() {
+  const controller = new AbortController();
+  activeStreamAbort = controller;
+  return controller;
+}
+
+function finishStreamAbort(controller) {
+  if (activeStreamAbort !== controller) return;
+  activeStreamAbort = null;
+  state.streaming = false;
+  updateComposer();
+}
+
+function isStreamAbort(err) {
+  return err?.name === "AbortError";
 }
 
 function renderAssistantStream(node, content, id = "", turn = "", variants = assistantVariants(node), messageId = node.dataset.message || "") {
@@ -498,9 +566,9 @@ function renderAssistantStream(node, content, id = "", turn = "", variants = ass
   const parts = parseSpeakerParts(content);
   node.classList.toggle("mixed-speakers", hasUserSpeaker(parts));
   const children = !content
-    ? [loadingBubbleNode()]
+    ? [namedAssistantBubble(loadingBubbleNode())]
     : parts.length === 1 && parts[0].speaker == null
-    ? [bubbleNode("assistant", content)]
+    ? [namedAssistantBubble(bubbleNode("assistant", content))]
     : parts.flatMap(speakerPartNodes);
   const variantIndex = Number(node.dataset.variantIndex || Math.max(0, variants.length - 1));
   setChildren(node, [...children, actionNode(id, turn, variants, variantIndex, messageId)]);
@@ -509,7 +577,7 @@ function renderAssistantStream(node, content, id = "", turn = "", variants = ass
 
 function renderAssistantError(node, message) {
   node.dataset.content = message;
-  setChildren(node, [bubbleNode("assistant danger", message)]);
+  setChildren(node, [namedAssistantBubble(bubbleNode("assistant danger", message))]);
 }
 
 function assistantMessageNode(content, id, turn, messageId = "") {
@@ -519,7 +587,7 @@ function assistantMessageNode(content, id, turn, messageId = "") {
     dataset: { gen: id, message: messageId, turn, content },
   });
   if (parts.length === 1 && parts[0].speaker == null) {
-    setChildren(node, [bubbleNode("assistant", content), actionNode(id, turn, [], 0, messageId)]);
+    setChildren(node, [namedAssistantBubble(bubbleNode("assistant", content)), actionNode(id, turn, [], 0, messageId)]);
     return node;
   }
 
@@ -559,7 +627,7 @@ function userMessageNode(content, messageId = "", turn = "") {
     dataset: { message: messageId, turn, content },
   });
   setChildren(node, [
-    ...(explicitSpeaker ? parts.flatMap(speakerPartNodes) : [bubbleNode("user", content)]),
+    ...(explicitSpeaker ? parts.flatMap(speakerPartNodes) : [namedUserBubble(bubbleNode("user", content))]),
     userActionNode(messageId),
   ]);
   return node;
@@ -587,11 +655,39 @@ function isControlMessage(content) {
 
 function speakerPartNodes(part) {
   if (isNarrationSpeaker(part.speaker)) return [narrationNode(part.text)];
-  if (isUserSpeaker(part.speaker)) return [bubbleNode("user", part.text)];
+  if (isUserSpeaker(part.speaker)) {
+    return [el("div", { className: "speaker-user-message" }, [
+      el("div", { className: "speaker-name", text: part.speaker }),
+      bubbleNode("user", part.text),
+    ])];
+  }
+  if (part.speaker && isPlotCharacterSpeaker(part.speaker)) {
+    return [el("div", { className: "speaker-character-message" }, [
+      chatCharacterAvatar(),
+      el("div", { className: "speaker-character-content" }, [
+        el("div", { className: "speaker-name", text: part.speaker }),
+        bubbleNode("assistant", part.text),
+      ]),
+    ])];
+  }
   return [
     part.speaker ? el("div", { className: "speaker-name", text: part.speaker }) : null,
     bubbleNode("assistant", part.text),
   ];
+}
+
+function namedAssistantBubble(bubble) {
+  return el("div", { className: "speaker-assistant-message" }, [
+    el("div", { className: "speaker-name", text: activeCharacterName() }),
+    bubble,
+  ]);
+}
+
+function namedUserBubble(bubble) {
+  return el("div", { className: "speaker-user-message" }, [
+    el("div", { className: "speaker-name", text: activeUserName() }),
+    bubble,
+  ]);
 }
 
 function bubbleNode(className, content) {

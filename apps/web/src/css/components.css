@@ -545,7 +545,7 @@
   align-self: flex-end;
   background: var(--user-bubble);
   color: var(--user-text);
-  border-radius: 20px 20px 6px 20px;
+  border-radius: 20px 6px 20px 20px;
 }
 
 .bubble.assistant {
@@ -553,7 +553,7 @@
   background: var(--assistant-bubble);
   color: var(--assistant-text);
   border: 1px solid var(--assistant-bubble-border);
-  border-radius: 20px 20px 20px 6px;
+  border-radius: 6px 20px 20px 20px;
 }
 
 .message-group {
@@ -575,6 +575,59 @@
 
 .message-group.assistant {
   align-self: flex-start;
+}
+
+.chat-character-avatar {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface-raised);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chat-character-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.speaker-character-message {
+  max-width: 100%;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.speaker-character-content {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.speaker-user-message {
+  max-width: 100%;
+  display: grid;
+  gap: 4px;
+  justify-self: end;
+  justify-items: end;
+}
+
+.speaker-assistant-message {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+
+.message-group.mixed-speakers .speaker-user-message .speaker-name {
+  justify-self: end;
 }
 
 .message-group.user {

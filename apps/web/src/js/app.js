@@ -1,7 +1,7 @@
 import { api, apiBase } from "./api.js";
 import { activeConversation, conversationActivated, messagesLoaded } from "./actions.js";
 import { createCharacter, createPlot, loadCatalog, loadMorePlots, openPlot, renderPlots, uploadCharacterAvatar } from "./catalog.js";
-import { bindUserProfileSheet, cancelComposerEdit, canResendEditedUserMessage, canSendEmptyMessage, deleteMessage, deleteMessagesFrom, editGeneration, editUserMessage, hydrateTurnGenerations, loadMessages, markLastUserMessage, messageNode, needsUserProfileSelection, openUserProfileSheet, promptUserProfileIfNeeded, regenerate, resendEditedUserMessage, saveComposerEdit, sendMessage, showAssistantVariant, updateComposer } from "./chat.js";
+import { bindUserProfileSheet, cancelChatStream, cancelComposerEdit, canResendEditedUserMessage, canSendEmptyMessage, deleteMessage, deleteMessagesFrom, editGeneration, editUserMessage, hydrateTurnGenerations, loadMessages, markLastUserMessage, messageNode, needsUserProfileSelection, openUserProfileSheet, promptUserProfileIfNeeded, regenerate, resendEditedUserMessage, saveComposerEdit, sendMessage, showAssistantVariant, updateComposer } from "./chat.js";
 import { keys } from "./config.js";
 import * as conversations from "./conversations.js";
 import { $, closeDropdowns, confirmDialog, el, openDropdown, parseJson, toast, toggleDropdown } from "./dom.js";
@@ -252,6 +252,7 @@ function bindChat() {
   let lastComposerResetTap = 0;
   $("chatBackBtn").onclick = async () => {
     if (cancelActiveTitleEdit()) return;
+    cancelChatStream();
     if (state.ui.chatFromList) {
       showScreen("conversations");
       await conversations.loadConversations();
