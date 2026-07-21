@@ -141,4 +141,7 @@ CREATE INDEX IF NOT EXISTS idx_turns_conversation ON turns(conversation_id);
 -- user_profile 삭제 시 ON DELETE SET NULL 대상 행 조회 + 유저별 대화/생성물 조회
 CREATE INDEX IF NOT EXISTS idx_conversations_user_profile ON conversations(user_profile_id);
 CREATE INDEX IF NOT EXISTS idx_generations_user_profile ON generations(user_profile_id);
+
+-- trainer chat export의 generation별 최신 edit 선택 (correlated subquery)
+CREATE INDEX IF NOT EXISTS idx_generation_edits_generation ON generation_edits(generation_id);
 """
