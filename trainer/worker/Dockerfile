@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir -r /tmp/requirements-worker.txt \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ollama-client /bin/ollama /usr/local/bin/ollama
-COPY trainer/api trainer/jobs trainer/recipes trainer/worker /workspace/trainer/
+COPY trainer/core trainer/domain trainer/util.py trainer/jobs trainer/recipes trainer/worker /workspace/trainer/
 COPY libs /workspace/libs
 ENV PYTHONPATH=/workspace/libs
 

@@ -1,40 +1,42 @@
-"""Import a JSONL file into a trainer dataset folder."""
+# Import a JSONL file into a trainer dataset folder.
 
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT: Path = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from trainer.api.dataset_io import DatasetError, create_dataset, datasets_dir, validate_format, validate_name, write_rows
-from trainer.api.importer import import_file
+from trainer.domain.datasets import DatasetError, DatasetFormat, validate_format
+from trainer.domain.importer import create_dataset_from_upload
+
+log = logging.getLogger(__name__)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
+    parser: argparse.ArgumentParser = argparse.ArgumentParser()
     parser.add_argument("file", type=Path)
     parser.add_argument("--name", required=True)
-    parser.add_argument("--format", required=True, choices=("chat", "preference"))
-    args = parser.parse_args()
+    parser.add_argument("--format", required=True, choices=[f.value for f in DatasetFormat])
+    args: argparse.Namespace = parser.parse_args()
+    
     try:
-        name = validate_name(args.name)
-        dataset_format = validate_format(args.format)
-        if (datasets_dir() / name).exists():
-            raise DatasetError("dataset already exists")
-        result = import_file(args.file, dataset_format)
-        if not result.rows:
-            raise DatasetError("no valid rows")
-        create_dataset(name, dataset_format, "import", args.file.name)
-        row_count = write_rows(name, dataset_format, result.rows)
+        dataset_format: DatasetFormat = validate_format(args.format)
+        raw: bytes = args.file.read_bytes()
+        result: dict[str, Any] = create_dataset_from_upload(args.name, dataset_format, raw, args.file.name)
     except (DatasetError, FileExistsError, OSError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        log.error("%s", exc)
         return 1
-    print(f"dataset={name} row_count={row_count} rejected_rows={result.rejected_rows} duplicates_removed={result.duplicates_removed}")
+
+    print(f"dataset={result['dataset']} row_count={result['row_count']} "
+          f"rejected_rows={result['rejected_rows']} duplicates_removed={result['duplicates_removed']}")
     return 0
 
 

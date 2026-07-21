@@ -1,124 +1,143 @@
-"""Single-process polling worker that owns execution, not training logic."""
+# Single-process polling worker that owns execution, not training logic.
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Iterator
 
-import yaml
-
-
-ROOT = Path(__file__).resolve().parents[2]
+ROOT: Path = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-LIBS = ROOT / "libs"
+LIBS: Path = ROOT / "libs"
 if str(LIBS) not in sys.path:
     sys.path.insert(0, str(LIBS))
 
 from dbkit import Bind, OrderBy, ReadQuery, WriteQuery, exists, find_all, find_one, update
 
-from trainer.api.dataset_io import trainer_root, utc_now
-from trainer.api.db import TRAINING_RUNS, connect, initialize
+from trainer.core.db import TRAINING_RUNS, connect, initialize
+from trainer.domain.recipes import get_recipe_backend
+from trainer.domain.runs import read_run_meta, run_backend
+from trainer.domain.specs import Backend
+from trainer.util import trainer_root, utc_now
 
 
-SUPPORTED_BACKENDS = {"mlx", "cuda"}
+log = logging.getLogger(__name__)
 
 
-def runner_backends() -> set[str]:
-    value = os.environ.get("RUNNER_BACKENDS")
+def backends_from_env() -> set[str]:
+    value: str | None = os.environ.get("RUNNER_BACKENDS")
     if value is None:
         raise RuntimeError("RUNNER_BACKENDS is required")
-    backends = {item.strip() for item in value.split(",") if item.strip()}
+
+    backends: set[str] = {item.strip() for item in value.split(",") if item.strip()}
+
     if not backends:
         raise RuntimeError("RUNNER_BACKENDS must include at least one backend")
-    unknown = backends - SUPPORTED_BACKENDS
+
+    unknown: set[str] = backends - {b.value for b in Backend}
+
     if unknown:
         raise RuntimeError(f"RUNNER_BACKENDS has unsupported backend(s): {', '.join(sorted(unknown))}")
+
     return backends
 
 
-def backend_for(run: dict[str, object], connection: sqlite3.Connection) -> str:
-    """Read a queued or running job's backend without depending on its execution mode."""
+def backend_for(run: dict[str, object], conn: sqlite3.Connection) -> Backend:
+    # Read a queued or running job's backend without depending on its execution mode.
     if run["type"] == "TRAIN":
-        recipe_name = run.get("recipe")
-        if not isinstance(recipe_name, str) or Path(recipe_name).name != recipe_name:
+        recipe_name: object = run.get("recipe")
+        
+        if not isinstance(recipe_name, str):
             raise ValueError("training run recipe is invalid")
-        recipe_path = trainer_root() / "recipes" / recipe_name
+        
+        return get_recipe_backend(recipe_name)
+
+    if run["type"] == "REGISTER":
+        parent_run_id: object = run.get("parent_run_id")
+        
+        if not isinstance(parent_run_id, int):
+            raise ValueError("register run parent is invalid")
+        
+        parent: dict[str, object] | None = find_one(conn, ReadQuery.by_id(TRAINING_RUNS, parent_run_id))
+        
+        if parent is None:
+            raise ValueError("register run parent is unavailable")
+        
+        run_dir: Path = trainer_root() / "runs" / str(parent["output_name"])
+        
+        return run_backend(read_run_meta(run_dir))
+
+    raise ValueError("training run type is invalid")
+
+
+def finish_run(conn: sqlite3.Connection, run_id: object, status: str, error: str | None) -> None:
+    # run을 종료 상태로 기록하는 유일한 경로.
+    update(conn, WriteQuery(
+        TRAINING_RUNS,
+        set=Bind({
+            "status": status, 
+            "error": error, 
+            "finished_at": utc_now()
+        }),
+        where=Bind({"id": run_id}),
+    ))
+
+
+def eligible_runs(conn: sqlite3.Connection, status: str, backends: set[str], skip_verb: str) -> Iterator[dict[str, object]]:
+    # RUNNER_BACKENDS로 처리 가능한 run만 통과시키는 공통 필터.
+    runs: list[dict[str, object]] = find_all(
+        conn, 
+        ReadQuery(TRAINING_RUNS, where=Bind({"status": status}), 
+        order_by=(OrderBy("id"),))
+    )
+    for run in runs:
         try:
-            recipe = yaml.safe_load(recipe_path.read_text(encoding="utf-8"))
-        except (OSError, yaml.YAMLError) as exc:
-            raise ValueError("training run recipe is unavailable") from exc
-        backend = recipe.get("backend") if isinstance(recipe, dict) else None
-    elif run["type"] == "REGISTER":
-        try:
-            parent_run_id = run.get("parent_run_id")
-            if not isinstance(parent_run_id, int):
-                raise ValueError("register run parent is invalid")
-            parent = find_one(connection, ReadQuery.by_id(TRAINING_RUNS, parent_run_id))
-            if parent is None:
-                raise ValueError("register run parent is unavailable")
-            meta_path = trainer_root() / "runs" / str(parent["output_name"]) / "run_meta.json"
-            backend = json.loads(meta_path.read_text(encoding="utf-8")).get("backend")
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError("register run metadata is unavailable") from exc
-    else:
-        raise ValueError("training run type is invalid")
-    if backend not in SUPPORTED_BACKENDS:
-        raise ValueError("training run backend is invalid")
-    return backend
+            backend: Backend = backend_for(run, conn)
+        except ValueError as exc:
+            log.info("%s run %s: %s", skip_verb, run["id"], exc)
+            continue
+        if backend not in backends:
+            log.info("%s run %s: backend %s is not in RUNNER_BACKENDS", skip_verb, run["id"], backend)
+            continue
+        yield run
 
 
-def mark_orphans(backends: set[str]) -> None:
-    with connect() as connection:
-        running = find_all(connection, ReadQuery(TRAINING_RUNS, where=Bind({"status": "RUNNING"}), order_by=(OrderBy("id"),)))
-        for run in running:
-            try:
-                backend = backend_for(run, connection)
-            except ValueError as exc:
-                print(f"leaving RUNNING run {run['id']}: {exc}", flush=True)
-                continue
-            if backend not in backends:
-                print(f"leaving RUNNING run {run['id']}: backend {backend} is not in RUNNER_BACKENDS", flush=True)
-                continue
-            update(connection, WriteQuery(
-                TRAINING_RUNS,
-                set=Bind({"status": "FAILED", "error": "orphaned", "finished_at": utc_now()}),
-                where=Bind({"id": run["id"]}),
-            ))
-
-
-def next_run(backends: set[str]):
-    with connect() as connection:
-        if exists(connection, ReadQuery(TRAINING_RUNS, where=Bind({"status": "RUNNING"}))):
+def next_run(backends: set[str]) -> dict[str, object] | None:
+    with connect() as conn:
+        if exists(conn, ReadQuery(TRAINING_RUNS, where=Bind({"status": "RUNNING"}))):
             return None
-        queued = find_all(connection, ReadQuery(TRAINING_RUNS, where=Bind({"status": "QUEUED"}), order_by=(OrderBy("id"),)))
-        for run in queued:
-            try:
-                backend = backend_for(run, connection)
-            except ValueError as exc:
-                print(f"skipping queued run {run['id']}: {exc}", flush=True)
-                continue
-            if backend not in backends:
-                print(f"skipping queued run {run['id']}: backend {backend} is not in RUNNER_BACKENDS", flush=True)
-                continue
-            cursor = connection.execute(
-                "UPDATE training_runs SET status = 'RUNNING', started_at = ? WHERE id = ? AND status = 'QUEUED'",
-                (utc_now(), run["id"]),
-            )
+        for run in eligible_runs(conn, "QUEUED", backends, "skipping queued"):
+            cursor: sqlite3.Cursor = update(conn, WriteQuery(
+                TRAINING_RUNS,
+                set=Bind({"status": "RUNNING", "started_at": utc_now()}),
+                where=Bind({"id": run["id"], "status": "QUEUED"}),
+            ))
             if cursor.rowcount:
                 return run
     return None
 
 
-def command_for(run: dict[str, object]) -> list[list[str]]:
-    jobs = trainer_root() / "jobs"
+def run_job(run: dict[str, object]) -> None:
+    run_root: Path = trainer_root() / "runs"
+    run_root.mkdir(parents=True, exist_ok=True)
+    log_path: Path = run_root / f"job-{run['id']}.log"
+
+    with connect() as conn:
+        update(conn, WriteQuery(TRAINING_RUNS, set=Bind({"log_path": str(log_path)}), where=Bind({"id": run["id"]})))
+
+    status: str = "DONE"
+    error: str | None = None
+
+    jobs: Path = trainer_root() / "jobs"
     if run["type"] == "TRAIN":
-        return [[
+        commands: list[list[str]] = [[
             sys.executable,
             str(jobs / "train_lora.py"),
             "--datasets",
@@ -128,63 +147,72 @@ def command_for(run: dict[str, object]) -> list[list[str]]:
             "--output-name",
             str(run["output_name"]),
         ]]
-    run_dir = trainer_root() / "runs" / str(run["output_name"])
-    return [
-        [sys.executable, str(jobs / "export_gguf.py"), "--run-dir", str(run_dir)],
-        [sys.executable, str(jobs / "register_model.py"), "--run-dir", str(run_dir)],
-    ]
+    else:
+        run_dir: Path = trainer_root() / "runs" / str(run["output_name"])
+        commands = [
+            [sys.executable, str(jobs / "export_gguf.py"), "--run-dir", str(run_dir)],
+            [sys.executable, str(jobs / "register_model.py"), "--run-dir", str(run_dir)],
+        ]
 
-
-def run_job(run: dict[str, object]) -> None:
-    run_root = trainer_root() / "runs"
-    run_root.mkdir(parents=True, exist_ok=True)
-    log_path = run_root / f"job-{run['id']}.log"
-    with connect() as connection:
-        update(connection, WriteQuery(TRAINING_RUNS, set=Bind({"log_path": str(log_path)}), where=Bind({"id": run["id"]})))
-    status = "DONE"
-    error = None
-    with log_path.open("w", encoding="utf-8") as log:
-        for command in command_for(run):
-            log.write("$ " + " ".join(command) + "\n")
-            log.flush()
+    with log_path.open("w", encoding="utf-8") as log_file:
+        for command in commands:
+            log_file.write("$ " + " ".join(command) + "\n")
+            log_file.flush()
             try:
-                result = subprocess.run(command, stdout=log, stderr=subprocess.PIPE, text=True)
+                result: subprocess.CompletedProcess[str] = subprocess.run(
+                    command, 
+                    stdout=log_file, 
+                    stderr=subprocess.PIPE, 
+                    text=True
+                )
             except OSError as exc:
                 status = "FAILED"
                 error = str(exc)
-                log.write(error + "\n")
+                log_file.write(error + "\n")
                 break
+
             if result.stderr:
-                log.write(result.stderr)
+                log_file.write(result.stderr)
+            
                 if not result.stderr.endswith("\n"):
-                    log.write("\n")
+                    log_file.write("\n")
+            
             if result.returncode:
                 status = "FAILED"
                 error = result.stderr[-2000:].strip() or f"command exited {result.returncode}"
                 break
-    with connect() as connection:
-        update(connection, WriteQuery(
-            TRAINING_RUNS,
-            set=Bind({"status": status, "error": error, "finished_at": utc_now()}),
-            where=Bind({"id": run["id"]}),
-        ))
+            
+    with connect() as conn:
+        finish_run(conn, run["id"], status, error)
 
 
 def main() -> int:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    
     try:
-        backends = runner_backends()
+        backends: set[str] = backends_from_env()
     except RuntimeError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        log.error("%s", exc)
         return 1
+    
     initialize()
-    mark_orphans(backends)
-    print(f"trainer worker polling for backends: {', '.join(sorted(backends))}", flush=True)
+    with connect() as conn:
+        for run in eligible_runs(conn, "RUNNING", backends, "leaving RUNNING"):
+            finish_run(conn, run["id"], "FAILED", "orphaned")
+
+    log.info("trainer worker polling for backends: %s", ", ".join(sorted(backends)))
+    
     while True:
-        run = next_run(backends)
+        run: dict[str, object] | None = next_run(backends)
         if run is None:
             time.sleep(10)
             continue
-        run_job(run)
+        try:
+            run_job(run)
+        except Exception as exc:
+            log.exception("run %s crashed", run["id"])
+            with connect() as conn:
+                finish_run(conn, run["id"], "FAILED", str(exc))
         time.sleep(10)
 
 

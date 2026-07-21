@@ -34,7 +34,7 @@ export LLAMA_CPP_DIR="$(brew --prefix llama.cpp)"
 
 ```sh
 source trainer/.venv/bin/activate
-PYTHONPATH=libs uvicorn trainer.api.main:app --port 8090
+PYTHONPATH=libs uvicorn trainer.api.app:app --port 8090
 ```
 
 두 번째 터미널에서 MLX worker를 실행합니다.

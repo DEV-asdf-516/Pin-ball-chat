@@ -159,10 +159,13 @@ def exists(conn: sqlite3.Connection, query: ReadQuery) -> bool:
     return bool(row)
 
 
-def insert(conn: sqlite3.Connection, spec: TableSpec, values: Bind) -> None:
-    placeholders: str = ",".join(f":{c}" for c in spec.columns)
-    conn.execute(
-        f"INSERT INTO {spec.table} ({_join_columns(spec.columns)}) VALUES ({placeholders})", values.values)
+def insert(conn: sqlite3.Connection, spec: TableSpec, values: Bind) -> sqlite3.Cursor:
+    # spec.columns가 아니라 values(Bind)의 키로 컬럼 목록을 만든다 — 호출마다 다른 컬럼 subset을
+    # insert해야 하는 테이블(예: 서로 다른 컬럼을 쓰는 여러 row 타입)도 그대로 지원하기 위함.
+    # cursor를 반환하므로 autoincrement PK의 cursor.lastrowid가 필요한 곳에도 쓸 수 있다.
+    columns: tuple[str, ...] = tuple(values.values.keys())
+    placeholders: str = ",".join(f":{c}" for c in columns)
+    return conn.execute(f"INSERT INTO {spec.table} ({_join_columns(columns)}) VALUES ({placeholders})", values.values)
 
 
 def upsert(conn: sqlite3.Connection, spec: TableSpec, values: Bind) -> None:
@@ -180,13 +183,15 @@ def upsert(conn: sqlite3.Connection, spec: TableSpec, values: Bind) -> None:
     )
 
 
-def update(conn: sqlite3.Connection, query: WriteQuery) -> None:
+def update(conn: sqlite3.Connection, query: WriteQuery) -> sqlite3.Cursor:
+    # cursor를 반환하므로 cursor.rowcount로 원자적 claim/CAS 패턴(WHERE에 상태 조건을 걸고
+    # 실제로 몇 행이 바뀌었는지 확인)에도 쓸 수 있다.
     set_clause: str = ",".join(f"{c}={v.sql}" if isinstance(
         v, RawSQL) else f"{c}=:set_{c}" for c, v in query.set.items())
     set_params: dict = {f"set_{c}": v for c,
                         v in query.set.items() if not isinstance(v, RawSQL)}
     where_clause, where_params = _where(query.where)
-    conn.execute(
+    return conn.execute(
         f"""
         UPDATE {query.spec.table}
         SET {set_clause}

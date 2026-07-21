@@ -1,52 +1,61 @@
-"""Export application rows through the same dataset writer used by the API."""
+# Export application rows through the same dataset writer used by the API.
 
 from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT: Path = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from trainer.api.dataset_io import app_db_connection, DatasetError, canonical_hash, create_dataset, datasets_dir, export_application_rows, validate_format, validate_name, validate_row, write_rows
+from trainer.core.db.app_db import app_db_connection, export_application_rows
+from trainer.core.errors import AppDbUnavailable
+from trainer.domain.datasets import CreateDatasetParams, DatasetError, DatasetFormat, create_dataset_from_candidates, validate_format, validate_name
+
+log = logging.getLogger(__name__)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
+    
+    parser: argparse.ArgumentParser = argparse.ArgumentParser()
     parser.add_argument("--name", required=True)
-    parser.add_argument("--format", required=True, choices=("chat", "preference"))
+    parser.add_argument("--format", required=True, choices=[f.value for f in DatasetFormat])
     parser.add_argument("--generated-by", required=True)
-    args = parser.parse_args()
+    
+    args: argparse.Namespace = parser.parse_args()
+    
     try:
-        name = validate_name(args.name)
-        dataset_format = validate_format(args.format)
+        name: str = validate_name(args.name)
+        dataset_format: DatasetFormat = validate_format(args.format)
+
         if not args.generated_by.strip():
             raise DatasetError("generated_by is required for app_export")
-        if (datasets_dir() / name).exists():
-            raise DatasetError("dataset already exists")
-        with app_db_connection() as connection:
-            exported = export_application_rows(connection, dataset_format)
-        rows = []
-        seen = set()
-        for row in exported:
-            try:
-                checked = validate_row(row, dataset_format)
-            except DatasetError:
-                continue
-            key = canonical_hash(checked)
-            if key not in seen:
-                seen.add(key)
-                rows.append(checked)
-        create_dataset(name, dataset_format, "app_export", f"APP_DB_PATH export format={dataset_format}", args.generated_by)
-        row_count = write_rows(name, dataset_format, rows)
-    except (DatasetError, FileExistsError, OSError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+
+        with app_db_connection() as conn:
+            exported: list[dict[str, Any]] = export_application_rows(conn, dataset_format)
+
+        params: CreateDatasetParams = CreateDatasetParams(
+            name,
+            dataset_format,
+            source="app_export",
+            origin=f"APP_DB_PATH export format={dataset_format}",
+            generated_by=args.generated_by,
+        )
+        result: dict[str, Any] = create_dataset_from_candidates(params, exported)
+
+    except (AppDbUnavailable, DatasetError, FileExistsError, OSError) as exc:
+        log.error("%s", exc)
         return 1
-    print(json.dumps({"dataset": name, "row_count": row_count}, ensure_ascii=False))
+
+    print(json.dumps(result, ensure_ascii=False))
+
     return 0
 
 

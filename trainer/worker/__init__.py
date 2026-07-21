@@ -1,1 +1,1 @@
-"""Trainer worker package."""
+# Trainer worker package.

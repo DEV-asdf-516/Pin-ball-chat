@@ -1,64 +1,54 @@
-"""Prepare chat data and delegate LoRA training to mlx-lm."""
+# Prepare chat data and delegate LoRA training to mlx-lm.
 
 from __future__ import annotations
 
 import argparse
 import json
+import logging
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
-import yaml
 
-
-ROOT = Path(__file__).resolve().parents[2]
+ROOT: Path = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from trainer.api.dataset_io import DatasetError, data_path, read_manifest, trainer_root, utc_now, validate_name
+from trainer.domain.datasets import DatasetError, data_path, validate_name
+from trainer.domain.recipes import load_recipe, recipe_path
+from trainer.domain.runs import run_meta_path
+from trainer.domain.training_runs import validate_training_inputs
+from trainer.util import trainer_root, utc_now
+
+log = logging.getLogger(__name__)
 
 
 def git_commit() -> str | None:
     try:
         return subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, capture_output=True, check=True
+            ["git", "rev-parse", "HEAD"], 
+            cwd=ROOT, 
+            text=True, 
+            capture_output=True, 
+            check=True
         ).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return None
 
 
-def load_recipe(recipe_name: str) -> tuple[Path, dict[str, Any]]:
-    if Path(recipe_name).name != recipe_name:
-        raise DatasetError("recipe does not exist")
-    path = trainer_root() / "recipes" / recipe_name
-    if not path.is_file():
-        raise DatasetError("recipe does not exist")
-    try:
-        recipe = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except yaml.YAMLError as exc:
-        raise DatasetError("recipe is invalid") from exc
-    if not isinstance(recipe, dict) or recipe.get("backend") not in {"mlx", "cuda"}:
-        raise DatasetError("recipe backend is invalid")
-    return path, recipe
-
-
-def read_dataset_rows(names: list[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def read_dataset_rows(manifests: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    manifests: list[dict[str, Any]] = []
-    for name in names:
-        manifest = read_manifest(validate_name(name))
-        if manifest["format"] != "chat":
-            raise DatasetError("v0.1 supports chat only")
-        manifests.append(manifest)
-        with data_path(name).open("r", encoding="utf-8") as handle:
-            for line in handle:
-                if line.strip():
-                    rows.append(json.loads(line))
+
+    for manifest in manifests:
+        with data_path(manifest["name"]).open("r", encoding="utf-8") as handle:
+            rows.extend(json.loads(line) for line in handle if line.strip())
+
     if not rows:
         raise DatasetError("training datasets contain no rows")
-    return rows, manifests
+
+    return rows
 
 
 def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -68,34 +58,46 @@ def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
+    parser: argparse.ArgumentParser = argparse.ArgumentParser()
     parser.add_argument("--datasets", required=True, nargs="+")
     parser.add_argument("--recipe", required=True)
     parser.add_argument("--output-name", required=True)
-    args = parser.parse_args()
+    args: argparse.Namespace = parser.parse_args()
+    
     try:
-        output_name = validate_name(args.output_name)
-        recipe_path, recipe = load_recipe(args.recipe)
-        if recipe["backend"] == "cuda":
-            raise DatasetError("cuda backend is not implemented in v0.1")
-        rows, manifests = read_dataset_rows(args.datasets)
-        run_dir = trainer_root() / "runs" / output_name
+        output_name: str = validate_name(args.output_name)
+        manifests: list[dict[str, Any]] = validate_training_inputs(args.datasets, args.recipe)
+        recipe: dict[str, Any] = load_recipe(args.recipe)
+        recipe_file: Path = recipe_path(args.recipe)
+
+        rows: list[dict[str, Any]] = read_dataset_rows(manifests)
+        run_dir: Path = trainer_root() / "runs" / output_name
+       
         if run_dir.exists():
             raise DatasetError("run output directory already exists")
-        data_dir = run_dir / "data"
+        
+        data_dir: Path = run_dir / "data"
         data_dir.mkdir(parents=True)
-        valid_count = max(1, round(len(rows) * 0.05))
-        valid_rows = rows[-valid_count:]
-        train_rows = rows[:-valid_count]
+        
+        valid_count: int = max(1, round(len(rows) * 0.05))
+        valid_rows: list[dict[str, Any]] = rows[-valid_count:]
+        train_rows: list[dict[str, Any]] = rows[:-valid_count]
+        
         write_jsonl(data_dir / "train.jsonl", train_rows)
         write_jsonl(data_dir / "valid.jsonl", valid_rows)
-        shutil.copy2(recipe_path, run_dir / recipe_path.name)
+        
+        shutil.copy2(recipe_file, run_dir / recipe_file.name)
+        
         for manifest in manifests:
-            source = trainer_root() / "datasets" / manifest["name"] / "manifest.json"
+            source: Path = trainer_root() / "datasets" / manifest["name"] / "manifest.json"
             shutil.copy2(source, run_dir / f"manifest-{manifest['name']}.json")
-        training = recipe.get("training", {})
-        lora = recipe.get("lora", {})
-        command = [
+        
+        training: dict[str, Any] = recipe.get("training", {})
+        
+        lora: dict[str, Any] = recipe.get("lora", {})
+        
+        command: list[str] = [
             "mlx_lm.lora",
             "--model", recipe["base_model"],
             "--train",
@@ -108,9 +110,11 @@ def main() -> int:
             "--num-layers", str(training["num_layers"]),
             "--lora-parameters", json.dumps({"rank": lora["rank"], "alpha": lora["alpha"], "dropout": lora["dropout"]}),
         ]
+        
         if training.get("grad_checkpoint"):
             command.append("--grad-checkpoint")
-        meta = {
+
+        meta: dict[str, Any] = {
             "datasets": args.datasets,
             "recipe": args.recipe,
             "backend": recipe["backend"],
@@ -121,10 +125,14 @@ def main() -> int:
             "created_at": utc_now(),
             "git_commit": git_commit(),
         }
-        (run_dir / "run_meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        
+        meta_path: Path = run_meta_path(run_dir)
+        meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        
         subprocess.run(command, check=True)
-    except (DatasetError, KeyError, json.JSONDecodeError, yaml.YAMLError, OSError, subprocess.CalledProcessError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+    
+    except (DatasetError, KeyError, json.JSONDecodeError, OSError, subprocess.CalledProcessError) as exc:
+        log.error("%s", exc)
         return 1
     return 0
 
