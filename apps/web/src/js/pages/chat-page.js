@@ -38,7 +38,23 @@ export function chatPage() {
       }, [
         el("span"),
       ]),
-      el("textarea", { id: "messageInput", attrs: { rows: "1" } }),
+      el("div", { className: "composer-input-wrap" }, [
+        el("textarea", { id: "messageInput", attrs: { rows: "1" } }),
+        el("button", {
+          id: "insertMentionBtn",
+          className: "composer-symbol composer-symbol-start",
+          type: "button",
+          text: "@",
+          attrs: { title: "@ 입력", "aria-label": "@ 입력" },
+        }),
+        el("button", {
+          id: "insertAsteriskBtn",
+          className: "composer-symbol composer-symbol-end",
+          type: "button",
+          text: "*",
+          attrs: { title: "* 입력", "aria-label": "* 입력" },
+        }),
+      ]),
       el("button", {
         id: "sendBtn",
         className: "icon-btn primary",

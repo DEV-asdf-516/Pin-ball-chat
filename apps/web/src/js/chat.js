@@ -223,6 +223,8 @@ export function updateComposer() {
     ? Boolean($("messageInput").value.trim())
     : Boolean($("messageInput").value.trim() || canSendEmptyMessage() || canResendEditedUserMessage());
   $("messageInput").disabled = state.streaming || needsProfile;
+  $("insertMentionBtn").disabled = state.streaming || needsProfile;
+  $("insertAsteriskBtn").disabled = state.streaming || needsProfile;
   $("composer").classList.toggle("busy", state.streaming);
   $("composer").classList.toggle("editing", editing);
   $("composer").classList.toggle("profile-required", needsProfile);

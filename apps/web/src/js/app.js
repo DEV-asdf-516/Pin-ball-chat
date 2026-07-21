@@ -261,6 +261,8 @@ function bindChat() {
     showScreen("detail");
   };
   $("chatUserProfileBtn").onclick = () => openUserProfileSheet();
+  bindComposerSymbol("insertMentionBtn", "@");
+  bindComposerSymbol("insertAsteriskBtn", "*");
   $("composer").onclick = (event) => {
     if (!needsUserProfileSelection()) return;
     event.preventDefault();
@@ -388,6 +390,20 @@ function bindChat() {
       hydrateTurnGenerations($("messages"));
       $("messages").scrollTop = $("messages").scrollHeight - height;
     } catch {}
+  };
+}
+
+function bindComposerSymbol(id, value) {
+  const button = $(id);
+  button.onpointerdown = (event) => event.preventDefault();
+  button.onclick = () => {
+    const input = $("messageInput");
+    if (input.disabled) return;
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? start;
+    input.setRangeText(value, start, end, "end");
+    input.focus();
+    input.dispatchEvent(new Event("input"));
   };
 }
 

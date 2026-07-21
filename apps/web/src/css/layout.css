@@ -159,11 +159,47 @@ main {
   border-top: 1px solid var(--border);
   background: var(--shell-bg);
   display: grid;
-  grid-template-columns: 1fr 44px;
+  grid-template-columns: minmax(0, 1fr) 44px;
   grid-template-rows: 12px auto;
   row-gap: 4px;
   column-gap: 8px;
   align-items: end;
+}
+
+.composer-input-wrap {
+  min-width: 0;
+  position: relative;
+}
+
+.composer-input-wrap textarea {
+  padding-left: 42px;
+  padding-right: 42px;
+}
+
+.composer-symbol {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  position: absolute;
+  top: 5px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.composer-symbol-start {
+  left: 4px;
+}
+
+.composer-symbol-end {
+  right: 4px;
 }
 
 .composer.busy {
