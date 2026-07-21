@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from dataclasses import replace
 from typing import AsyncIterator
@@ -11,7 +12,19 @@ from ai.transport.http_client import HttpClient
 from ai.transport.http_errors import translate_http_errors
 from ai.specs import GenerateRequest
 from ai.providers.base import AIProvider
+from ai.providers.timing import log_stream_timing
 from util.safe_util import get_safe_dict
+
+log = logging.getLogger(__name__)
+
+if os.environ.get("AI_STREAM_DEBUG_TIMING"):
+    log.setLevel(logging.DEBUG)
+
+
+def _rate(count: int | None, duration_ns: int | None) -> float:
+    if not count or not duration_ns:
+        return 0.0
+    return count / (duration_ns / 1e9)
 
 
 def _is_bad_gateway(exc: httpx.HTTPStatusError, body: str) -> bool:
@@ -50,6 +63,7 @@ def to_ollama_payload(req: GenerateRequest) -> dict:
 class OllamaProvider(AIProvider):
     name = "ollama"
 
+    @log_stream_timing
     async def stream(self, req: GenerateRequest) -> AsyncIterator[str]:
         async for token in self._stream_internal(req, retried=False):
             yield token
@@ -78,6 +92,18 @@ class OllamaProvider(AIProvider):
                     yield content
 
                 if chunk.get("done"):
+                    log.debug(
+                        "ollama stats: model=%s prompt_tokens=%s prompt_eval=%.2fs (%.1f tok/s) "
+                        "eval_tokens=%s eval=%.2fs (%.1f tok/s) total=%.2fs",
+                        req.model,
+                        chunk.get("prompt_eval_count"),
+                        chunk.get("prompt_eval_duration", 0) / 1e9,
+                        _rate(chunk.get("prompt_eval_count"), chunk.get("prompt_eval_duration")),
+                        chunk.get("eval_count"),
+                        chunk.get("eval_duration", 0) / 1e9,
+                        _rate(chunk.get("eval_count"), chunk.get("eval_duration")),
+                        chunk.get("total_duration", 0) / 1e9,
+                    )
                     break
 
             if emitted_content:

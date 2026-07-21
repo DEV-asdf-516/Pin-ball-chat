@@ -8,6 +8,7 @@ from ai.transport.http_client import HttpClient
 from ai.transport.http_errors import translate_http_errors
 from ai.specs import GenerateRequest
 from ai.providers.base import AIProvider
+from ai.providers.timing import log_stream_timing
 from ai.transport.sse import aiter_sse_events
 from util.env_util import require_env
 from util.safe_util import get_safe_dict
@@ -37,6 +38,7 @@ class AnthropicProvider(AIProvider):
             "x-api-key": require_env("ANTHROPIC_API_KEY"),
         }
 
+    @log_stream_timing
     async def stream(self, req: GenerateRequest) -> AsyncIterator[str]:
         payload: dict = to_anthropic_payload(req)
         client: httpx.AsyncClient = HttpClient().get()

@@ -9,6 +9,7 @@ from ai.transport.http_client import HttpClient
 from ai.transport.http_errors import translate_http_errors
 from ai.specs import GenerateRequest
 from ai.providers.base import AIProvider
+from ai.providers.timing import log_stream_timing
 from ai.transport.sse import aiter_sse_events
 from util.env_util import require_env
 from util.safe_util import get_safe_dict, get_safe_list
@@ -52,6 +53,7 @@ class GeminiProvider(AIProvider):
         model_id: str = parse.quote(req.model, safe="")
         return f"{GEMINI_BASE_URL.rstrip('/')}/v1beta/models/{model_id}:{endpoint}?key={parse.quote(require_env('GEMINI_API_KEY'))}{extra_query}"
 
+    @log_stream_timing
     async def stream(self, req: GenerateRequest) -> AsyncIterator[str]:
         emitted_text: str = ""
         url: str = self._url(req, "streamGenerateContent", extra_query="&alt=sse")

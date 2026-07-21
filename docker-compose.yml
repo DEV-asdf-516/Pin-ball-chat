@@ -17,6 +17,7 @@ services:
       PINBALLCHAT_ROOT: /app
       AI_PROVIDER: ollama
       OLLAMA_BASE_URL: http://host.docker.internal:11434
+      AI_STREAM_DEBUG_TIMING: "1"
     volumes:
       - ./data:/app/data
     depends_on:
