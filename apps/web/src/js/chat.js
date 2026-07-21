@@ -153,6 +153,7 @@ async function saveGenerationEdit(genId, editedText) {
     turn_id: node.dataset.turn,
   }));
   node.remove();
+  updateRegenActions();
 }
 
 async function saveUserMessageEdit(messageId, editedText) {
