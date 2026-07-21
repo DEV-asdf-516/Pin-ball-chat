@@ -5,7 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from ai.errors import EmptyOutputError, ProviderBadGatewayError, ProviderTimeoutError
-from core.errors import BadRequest, NotFound
+from core.errors import BadRequest, Conflict, NotFound
 
 log = logging.getLogger(__name__)
 
@@ -14,6 +14,7 @@ log = logging.getLogger(__name__)
 _SIMPLE_ERRORS: dict[type[Exception], tuple[int, str]] = {
     NotFound: (404, "not_found"),
     BadRequest: (400, "bad_request"),
+    Conflict: (409, "conflict"),
     ValueError: (400, "bad_request"),
     ProviderTimeoutError: (504, "provider_timeout"),
     ProviderBadGatewayError: (502, "provider_bad_gateway"),

@@ -6,6 +6,10 @@ class NotFound(Exception):
     pass
 
 
+class Conflict(Exception):
+    pass
+
+
 def get_or_raise(value, message: str):
     if not value:
         raise NotFound(message)

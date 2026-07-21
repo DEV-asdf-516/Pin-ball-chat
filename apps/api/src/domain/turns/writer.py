@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from ai.registry import runtime_params
 from ai.specs import GenerateRequest
 from core.db import Bind, In, Ne, ReadQuery, RawSQL, WriteQuery, delete, fetch_one, find_all, find_one, insert, new_id, select_cols, update
-from core.errors import ensure, get_or_raise
+from core.errors import Conflict, ensure, get_or_raise
 from domain.prompts.system.reader import BuiltPrompt, build_prompt, snapshot_text
 from domain.specs import GenerationParams
 from domain.turns.specs import GENERATION_EDITS, GENERATIONS, MESSAGES, TURNS, USER_ACTIONS, ActionType, PreparedGeneration
@@ -170,6 +170,22 @@ def prepare_regenerate_stream(conn: sqlite3.Connection, turn_id: str) -> Prepare
     turn_row: dict | None = find_one(conn, ReadQuery.by_id(TURNS, turn_id))
     turn: dict = get_or_raise(turn_row, "turn not found")
 
+    # 중간 turn을 regenerate하면 그 이후 turn들의 메시지는 히스토리에 남고 이 turn만 빠지는
+    # 어색한 프롬프트가 된다 — 가장 최근 turn만 regenerate를 허용한다.
+    latest: sqlite3.Row | None = fetch_one(
+        conn,
+        RawSQL(f"""
+        SELECT {select_cols('turns')}
+        FROM turns
+        WHERE conversation_id=:conversation_id
+        ORDER BY rowid DESC
+        LIMIT 1
+        """),
+        {"conversation_id": turn["conversation_id"]},
+    )
+    if latest is None or latest["id"] != turn_id:
+        raise Conflict("only the latest turn can be regenerated")
+
     # 유저가 </>로 이전 후보를 다시 선택해뒀을 수 있어서, "가장 최근 candidate"가 아니라
     # 실제로 selected_generation_id로 표시된 generation을 reject 대상으로 삼는다.
     # 아직 아무것도 select한 적 없으면(=None) candidate_index가 가장 큰 것으로 대체한다.
@@ -189,7 +205,7 @@ def prepare_regenerate_stream(conn: sqlite3.Connection, turn_id: str) -> Prepare
         current_generation_id = current["id"] if current else None
 
     user_message: str = find_one(conn, ReadQuery.by_id(MESSAGES, turn["user_message_id"]))["content"]
-    built: BuiltPrompt = build_prompt(conn, turn["conversation_id"], user_message)
+    built: BuiltPrompt = build_prompt(conn, turn["conversation_id"], user_message, exclude_turn_id=turn_id)
 
     return PreparedGeneration(
         conversation_id=turn["conversation_id"],
