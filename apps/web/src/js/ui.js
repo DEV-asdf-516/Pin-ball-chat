@@ -19,12 +19,15 @@ export function setChatHeader(title, sub) {
   $("chatHeaderSub").textContent = sub || "";
 }
 
-export function showScreen(name) {
+export function showScreen(name, options = {}) {
+  const previousRoute = state.route;
+  const historyMode = options.history || "push";
   state.route = name;
   closeDropdowns();
   $("settingsSheet")?.classList.remove("open");
   $("userProfileSheet")?.classList.remove("open");
   $("appHeader").hidden = name === "chat";
+  document.documentElement.dataset.chatActive = name === "chat" ? "true" : "false";
   for (const el of document.querySelectorAll(".screen")) el.classList.remove("active");
   $(name + "Screen").classList.add("active");
   if (name === "plots") setHeader("Pinballchat", "내 플롯");
@@ -34,12 +37,16 @@ export function showScreen(name) {
   if (name === "detail") setHeader(state.selectedPlot?.title || "플롯", "", true);
   if (name === "chat") setChatHeader(chatTitle(), state.selectedPlot?.title || "");
   updateSettingsButton(name);
-  localStorage.setItem(keys.route, JSON.stringify({
+  const routeState = {
     route: name,
     plotId: state.selectedPlot?.id || null,
     managedPlotId: state.managedPlotId || null,
     conversationId: state.activeConversationId || null,
-  }));
+  };
+  localStorage.setItem(keys.route, JSON.stringify(routeState));
+  if (historyMode === "none") return;
+  const method = historyMode === "replace" || previousRoute === name ? "replaceState" : "pushState";
+  window.history[method]({ pinballchat: routeState }, "");
 }
 
 export function chatTitle() {

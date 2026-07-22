@@ -567,27 +567,26 @@ function resetComposerSize() {
   resizeComposerInput();
 }
 
-async function restoreRoute() {
-  const saved = parseJson(localStorage.getItem(keys.route));
+async function restoreRoute(saved = parseJson(localStorage.getItem(keys.route)), history = "replace") {
   if (!saved.route || saved.route === "plots") return;
   try {
     if (saved.route === "detail" && saved.plotId) {
       await openPlot(saved.plotId);
-      showScreen("detail");
+      showScreen("detail", { history });
       return;
     }
     if (saved.route === "plotCreate") {
-      showScreen("plotCreate");
+      showScreen("plotCreate", { history });
       return;
     }
     if (saved.route === "plotManage") {
       openPlotManager();
-      showScreen("plotManage");
+      showScreen("plotManage", { history });
       if (saved.managedPlotId) await openManagedPlot(saved.managedPlotId);
       return;
     }
     if (saved.route === "conversations") {
-      showConversations();
+      showScreen("conversations", { history });
       return;
     }
     if (saved.route === "chat" && saved.conversationId) {
@@ -595,11 +594,11 @@ async function restoreRoute() {
       await openPlot(conv.plotId, conv.userProfileId, { id: conv.plotId, title: conv.title || "플롯", character_id: "", source_text: "", plot_json: "{}" });
       await loadConversationSettings();
       await loadMessages();
-      showScreen("chat");
+      showScreen("chat", { history });
       promptUserProfileIfNeeded();
     }
   } catch {
-    showScreen("plots");
+    showScreen("plots", { history: "replace" });
   }
 }
 
@@ -688,6 +687,9 @@ function resizeComposerInput() {
 
 async function init() {
   mountApp();
+  showScreen("plots", { history: "replace" });
+  bindMobileViewport();
+  bindChatRefreshGuard();
   $("backBtn").onclick = () => {
     if (cancelActiveTitleEdit()) return;
     if (state.route === "plotManage" && closePlotManagerEdit()) return;
@@ -709,6 +711,46 @@ async function init() {
   } catch {}
   await conversations.loadConversations();
   await restoreRoute();
+  window.addEventListener("popstate", (event) => {
+    const routeState = event.state?.pinballchat;
+    if (!routeState) {
+      showScreen("plots", { history: "replace" });
+      return;
+    }
+    restoreRoute(routeState, "none");
+  });
+}
+
+function bindChatRefreshGuard() {
+  window.addEventListener("keydown", (event) => {
+    if (state.route !== "chat") return;
+    if (event.key !== "F5" && !(event.key.toLowerCase() === "r" && (event.metaKey || event.ctrlKey))) return;
+    event.preventDefault();
+  });
+  window.addEventListener("beforeunload", (event) => {
+    if (state.route !== "chat") return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
+}
+
+function bindMobileViewport() {
+  const viewport = window.visualViewport;
+  if (!viewport) return;
+  const syncViewport = () => {
+    const height = Math.round(viewport.height);
+    const keyboardHeight = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+    document.documentElement.style.setProperty("--visual-viewport-height", `${height}px`);
+    document.documentElement.dataset.keyboardOpen = keyboardHeight > 80 ? "true" : "false";
+    if (state.route !== "chat") return;
+    resizeComposerInput();
+    const messages = $("messages");
+    messages.scrollTop = messages.scrollHeight;
+  };
+  viewport.addEventListener("resize", syncViewport);
+  viewport.addEventListener("scroll", syncViewport);
+  window.addEventListener("orientationchange", syncViewport);
+  syncViewport();
 }
 
 init();
