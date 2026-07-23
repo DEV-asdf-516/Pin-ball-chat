@@ -292,6 +292,7 @@ function bindChat() {
       return;
     }
     if (inputMessage) $("messageInput").value = "";
+    resetComposerSize();
     updateComposer();
     sendMessage(hasInput ? inputMessage : "", { silentUser: !hasInput });
   };

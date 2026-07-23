@@ -162,7 +162,9 @@ export function bindSettings() {
   $("settingsForm").onsubmit = async (event) => {
     event.preventDefault();
     const inChat = canEditConversationSettings();
-    localStorage.setItem(keys.apiBase, $("apiBaseInput").value.trim() || "http://localhost:8080");
+    const apiAddress = $("apiBaseInput").value.trim();
+    if (apiAddress) localStorage.setItem(keys.apiBase, apiAddress);
+    else localStorage.removeItem(keys.apiBase);
     if (inChat) {
       state.settings.provider = $("providerSelect").value;
       state.settings.model = $("modelSelect").value;

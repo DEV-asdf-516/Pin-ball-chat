@@ -145,14 +145,12 @@ async function saveGenerationEdit(genId, editedText) {
   await api(`/api/generations/${genId}/edit`, { method: "POST", body: JSON.stringify({ editedText }) });
   const node = document.querySelector(`[data-gen="${CSS.escape(genId)}"]`);
   if (!node) return;
-  node.after(messageNode({
-    id: node.dataset.message || "",
-    role: "assistant",
-    content: editedText,
-    generation_id: genId,
-    turn_id: node.dataset.turn,
-  }));
-  node.remove();
+  const variants = assistantVariants(node).map((variant) => (
+    variant.gen === genId ? { ...variant, content: editedText } : variant
+  ));
+  const variantIndex = variants.findIndex((variant) => variant.gen === genId);
+  node.dataset.variantIndex = String(Math.max(0, variantIndex));
+  renderAssistantStream(node, editedText, genId, node.dataset.turn, variants, node.dataset.message || "");
   updateRegenActions();
 }
 

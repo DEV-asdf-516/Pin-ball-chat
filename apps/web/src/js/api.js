@@ -1,7 +1,14 @@
 import { keys } from "./config.js";
 
 export function apiBase() {
-  return localStorage.getItem(keys.apiBase) || (location.port === "8080" ? location.origin : "http://localhost:8080");
+  const saved = localStorage.getItem(keys.apiBase)?.trim();
+  if (saved) return saved.replace(/\/$/, "");
+  const current = new URL(location.href);
+  current.port = "8080";
+  current.pathname = "";
+  current.search = "";
+  current.hash = "";
+  return current.origin;
 }
 
 export async function api(path, options = {}) {
