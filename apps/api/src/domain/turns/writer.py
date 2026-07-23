@@ -255,6 +255,7 @@ def edit_generation(conn: sqlite3.Connection, generation_id: str, edited_text: s
     action = _UserAction(gen["conversation_id"], gen["turn_id"], generation_id, ActionType.GENERATION_EDITED)
     _record_user_action(conn, action)
     update(conn, WriteQuery(MESSAGES, Bind({"content": edited_text}), Bind({"generation_id": generation_id})))
+    update(conn, WriteQuery(GENERATIONS, Bind({"output_text": edited_text}), Bind({"id": generation_id})))
 
     return {
         "generationId": generation_id,
