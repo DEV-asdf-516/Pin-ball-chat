@@ -174,6 +174,8 @@ async function saveUserMessageEdit(messageId, editedText) {
 function startComposerEdit(edit) {
   if (!edit.id || state.streaming) return;
   state.composerEdit = edit;
+  state.composerHeight = composerEditorHeight();
+  state.composerMaxHeight = state.composerHeight;
   $("messageInput").value = edit.content || "";
   $("messageInput").focus();
   $("messageInput").select();
@@ -183,6 +185,8 @@ function startComposerEdit(edit) {
 
 function clearComposerEdit() {
   state.composerEdit = null;
+  state.composerHeight = null;
+  state.composerMaxHeight = 136;
   $("messageInput").value = "";
   $("messageInput").dispatchEvent(new Event("input"));
   updateComposer();
@@ -226,6 +230,7 @@ export function updateComposer() {
   $("messageInput").disabled = state.streaming || needsProfile;
   $("insertMentionBtn").disabled = state.streaming || needsProfile;
   $("insertAsteriskBtn").disabled = state.streaming || needsProfile;
+  $("cancelComposerEditBtn").hidden = !editing;
   $("composer").classList.toggle("busy", state.streaming);
   $("composer").classList.toggle("editing", editing);
   $("composer").classList.toggle("profile-required", needsProfile);
@@ -233,6 +238,11 @@ export function updateComposer() {
   $("sendBtn").setAttribute("title", editing ? "편집 저장" : "전송");
   $("sendBtn").setAttribute("aria-label", editing ? "편집 저장" : "전송");
   $("sendBtn").disabled = state.streaming || needsProfile || !canSend;
+}
+
+function composerEditorHeight() {
+  const viewportHeight = window.visualViewport?.height || window.innerHeight;
+  return Math.max(44, Math.round(viewportHeight - 48));
 }
 
 export function bindUserProfileSheet() {

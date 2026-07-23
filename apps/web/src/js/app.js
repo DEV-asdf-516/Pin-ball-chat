@@ -263,6 +263,10 @@ function bindChat() {
   $("chatUserProfileBtn").onclick = () => openUserProfileSheet();
   bindComposerSymbol("insertMentionBtn", "@");
   bindComposerSymbol("insertAsteriskBtn", "*");
+  $("cancelComposerEditBtn").onclick = () => {
+    cancelComposerEdit();
+    resizeComposerInput();
+  };
   $("composer").onclick = (event) => {
     if (!needsUserProfileSelection()) return;
     event.preventDefault();
@@ -532,11 +536,19 @@ function bindComposerResize() {
     const startY = event.clientY;
     const startMax = state.composerMaxHeight;
     const minHeight = composerMinHeight(input);
+    let dismissed = false;
 
     const onMove = (moveEvent) => {
       moveEvent.preventDefault();
+      if (dismissed) return;
       const next = startMax + startY - moveEvent.clientY;
-      state.composerHeight = Math.max(minHeight, Math.min(Math.round(window.innerHeight - 120), next));
+      if (next <= minHeight + 32) {
+        dismissed = true;
+        if (state.composerEdit) cancelComposerEdit();
+        else resetComposerSize();
+        return;
+      }
+      state.composerHeight = Math.max(minHeight, Math.min(composerMaxHeight(), next));
       state.composerMaxHeight = state.composerHeight;
       resizeComposerInput();
     };
@@ -558,6 +570,11 @@ function composerMinHeight(input) {
   const height = Math.ceil(input.getBoundingClientRect().height || input.scrollHeight || 44);
   input.style.height = previousHeight;
   return height;
+}
+
+function composerMaxHeight() {
+  const viewportHeight = window.visualViewport?.height || window.innerHeight;
+  return Math.max(44, Math.round(viewportHeight - 48));
 }
 
 function resetComposerSize() {
@@ -676,6 +693,7 @@ function safeImageUrl(value) {
 
 function resizeComposerInput() {
   const input = $("messageInput");
+  $("composer").classList.toggle("expanded", Boolean(state.composerHeight));
   input.style.setProperty("--composer-max-height", `${state.composerMaxHeight}px`);
   if (state.composerHeight) {
     input.style.height = `${state.composerHeight}px`;
@@ -743,6 +761,10 @@ function bindMobileViewport() {
     document.documentElement.style.setProperty("--visual-viewport-height", `${height}px`);
     document.documentElement.dataset.keyboardOpen = keyboardHeight > 80 ? "true" : "false";
     if (state.route !== "chat") return;
+    if (state.composerHeight) {
+      state.composerHeight = Math.min(state.composerHeight, composerMaxHeight());
+      state.composerMaxHeight = state.composerHeight;
+    }
     resizeComposerInput();
     const messages = $("messages");
     messages.scrollTop = messages.scrollHeight;

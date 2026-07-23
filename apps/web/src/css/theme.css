@@ -1,5 +1,7 @@
 :root {
   color-scheme: light dark;
+  font-size: clamp(.875rem, 3.75vw, 1rem);
+  -webkit-text-size-adjust: 100%;
   --app-bg: #dfe6ea;
   --shell-bg: #f8faf9;
   --surface: #ffffff;
