@@ -9,7 +9,7 @@ export const keys = {
 export const modelOptions = {
   "local-stub": ["local-stub"],
   ollama: [],
-  openai: [],
-  anthropic: [],
+  "openai-codex": [],
+  "claude-cli": [],
   gemini: [],
 };

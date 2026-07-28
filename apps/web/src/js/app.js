@@ -4,7 +4,7 @@ import { createCharacter, createPlot, loadCatalog, loadMorePlots, openPlot, rend
 import { bindUserProfileSheet, cancelChatStream, cancelComposerEdit, canResendEditedUserMessage, canSendEmptyMessage, deleteMessage, deleteMessagesFrom, editGeneration, editUserMessage, hydrateTurnGenerations, loadMessages, markLastUserMessage, messageNode, needsUserProfileSelection, openUserProfileSheet, promptUserProfileIfNeeded, regenerate, resendEditedUserMessage, saveComposerEdit, sendMessage, showAssistantVariant, updateComposer } from "./chat.js";
 import { keys } from "./config.js";
 import * as conversations from "./conversations.js";
-import { $, closeDropdowns, confirmDialog, el, openDropdown, parseJson, toast, toggleDropdown } from "./dom.js";
+import { $, bindGrowingTextarea, closeDropdowns, confirmDialog, el, openDropdown, parseJson, toast, toggleDropdown } from "./dom.js";
 import { activateFormTab, bindFormTabs } from "./form-tabs.js";
 import { bindGenrePicker, renderGenrePicker, selectedGenres } from "./genres.js";
 import { bindIntroEditor, introValue, renderIntroEditor } from "./intro-editor.js";
@@ -159,6 +159,8 @@ function bindPlotCreate() {
   renderGenrePicker("plotCreateGenreList");
   bindIntroEditor("plotCreateIntroEditor");
   renderIntroEditor("plotCreateIntroEditor");
+  bindGrowingTextarea($("plotCreateSource"));
+  bindGrowingTextarea($("plotCreateCharacterSource"));
   $("plotCreateCharacterAvatarFile").onchange = readCreateAvatarFile;
   $("plotCreateForm").onsubmit = async (event) => {
     event.preventDefault();
@@ -193,6 +195,7 @@ function bindPlotCreate() {
       });
       toast("플롯을 저장했습니다");
       $("plotCreateForm").reset();
+      resizePlotCreateTextareas();
       clearCreateAvatarPreview();
       renderGenrePicker("plotCreateGenreList");
       renderIntroEditor("plotCreateIntroEditor");
@@ -216,6 +219,7 @@ function bindPlotFab() {
   const openCreate = () => {
     closeDropdowns();
     $("plotCreateForm").reset();
+    resizePlotCreateTextareas();
     clearCreateAvatarPreview();
     renderGenrePicker("plotCreateGenreList");
     renderIntroEditor("plotCreateIntroEditor");
@@ -243,6 +247,14 @@ function bindPlotFab() {
     if (event.target.closest("#newPlotFab, #plotFabMenu")) return;
     closeDropdowns();
   };
+}
+
+function resizePlotCreateTextareas() {
+  for (const id of ["plotCreateSource", "plotCreateCharacterSource"]) {
+    const input = $(id);
+    input.style.height = "auto";
+    input.dispatchEvent(new Event("input"));
+  }
 }
 
 function bindChat() {

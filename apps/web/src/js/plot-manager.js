@@ -1,6 +1,6 @@
 import { apiBase } from "./api.js";
 import { deletePlot, findPlot, loadCharacter, loadMorePlots, updateCharacter, updatePlot, uploadCharacterAvatar } from "./catalog.js";
-import { $, confirmDialog, el, parseJson, setChildren, toast } from "./dom.js";
+import { $, bindGrowingTextarea, confirmDialog, el, parseJson, setChildren, toast } from "./dom.js";
 import { activateFormTab, bindFormTabs } from "./form-tabs.js";
 import { bindGenrePicker, renderGenrePicker, selectedGenres } from "./genres.js";
 import { bindIntroEditor, introValue, renderIntroEditor } from "./intro-editor.js";
@@ -198,6 +198,8 @@ function renderPlotEditForm(id) {
   ]);
   $("plotManageSource").value = plot?.source_text || "";
   $("plotManageCharacterSource").value = char?.source_text || "";
+  bindGrowingTextarea($("plotManageSource"));
+  bindGrowingTextarea($("plotManageCharacterSource"));
   $("plotManageAvatarPreview").dataset.previewUrl = existingAvatarUrl(char);
   $("plotManageCharacterAvatarFile").onchange = readManagedAvatarFile;
   renderManagedAvatarPreview();

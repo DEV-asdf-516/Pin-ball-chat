@@ -1,4 +1,5 @@
 import { el } from "../dom.js";
+import { icon } from "./icons.js";
 
 export function settingsSheet() {
   return el("div", { id: "settingsSheet", className: "sheet", attrs: { role: "dialog", "aria-modal": "true" } }, [
@@ -28,22 +29,22 @@ export function settingsSheet() {
           field("providerSelectButton", "AI 제공자", select("providerSelect", [
             ["local-stub", "로컬 테스트"],
             ["ollama", "Ollama"],
-            ["openai", "OpenAI"],
-            ["anthropic", "Anthropic"],
+            ["openai-codex", "Codex"],
+            ["claude-cli", "Claude Code"],
             ["gemini", "Gemini"],
           ])),
           field("modelSelectButton", "모델", select("modelSelect", [])),
         ]),
         el("div", { className: "row" }, [
-          field("numPredictInput", "답변 길이", el("input", {
+          field("numPredictInput", "최대 출력 글자 수", el("input", {
             id: "numPredictInput",
             type: "number",
-            attrs: { min: "64", max: "8192", step: "1" },
+            attrs: { min: "64", max: "", step: "1" },
           })),
-          field("numCtxInput", "맥락 길이", el("input", {
+          field("numCtxInput", "최대 컨텍스트", el("input", {
             id: "numCtxInput",
             type: "number",
-            attrs: { min: "512", max: "32768", step: "1" },
+            attrs: { min: "512", max: "", step: "1" },
           })),
         ]),
         field("adapterInput", "어댑터", el("input", { id: "adapterInput", attrs: { placeholder: "" } })),
@@ -52,7 +53,28 @@ export function settingsSheet() {
           el("span", { text: "프롬프트 압축" }),
         ]),
       ]),
+      el("section", { id: "providerConnectionsSection", className: "settings-section" }, [
+        el("button", { id: "openProviderConnectionsBtn", className: "provider-connections-link", type: "button" }, [
+          el("span", { className: "provider-connections-copy" }, [
+            el("strong", { text: "AI 제공자 연결" }),
+            el("span", { className: "meta", text: "연결 상태 확인 및 관리" }),
+          ]),
+          icon("gear"),
+        ]),
+      ]),
       el("button", { id: "settingsSaveBtn", className: "primary", type: "submit", text: "저장" }),
+    ]),
+  ]);
+}
+
+export function providerSettingsSheet() {
+  return el("div", { id: "providerSettingsSheet", className: "dialog", attrs: { role: "dialog", "aria-modal": "true" } }, [
+    el("div", { className: "dialog-panel provider-dialog-panel" }, [
+      el("div", { className: "row" }, [
+        el("strong", { id: "providerSettingsTitle", text: "AI 제공자 설정" }),
+        el("button", { id: "closeProviderSettingsBtn", className: "icon-btn", type: "button", text: "×", attrs: { "aria-label": "닫기" } }),
+      ]),
+      el("div", { id: "providerSettingsContent", className: "provider-settings-content", attrs: { "aria-live": "polite" } }),
     ]),
   ]);
 }
@@ -73,7 +95,10 @@ function select(id, values) {
       type: "button",
       dataset: { selectToggle: id },
       attrs: { "aria-haspopup": "listbox" },
-    }),
+    }, [
+      el("span", { className: "select-button-label" }),
+      icon("chevronDown"),
+    ]),
     el("div", { id: `${id}Menu`, className: "dropdown select-dropdown" }, selectOptions(id, values)),
   ]);
 }

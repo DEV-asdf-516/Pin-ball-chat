@@ -1,7 +1,8 @@
-import { api, apiBase, streamSse } from "./api.js";
+import { api, apiBase, sseError, streamSse } from "./api.js";
 import { activeConversation, conversationProfileChanged, messagesLoaded, userProfileDeleted, userProfileUpdated } from "./actions.js";
 import { $, closeDropdowns, confirmDialog, el, parseJson, setChildren, toast, toggleDropdown } from "./dom.js";
 import { renderMarkdown } from "./markdown.js";
+import { providerErrorMessage } from "./provider-errors.js";
 import { generationBody } from "./settings.js";
 import { state } from "./state.js";
 
@@ -47,7 +48,7 @@ export async function sendMessage(message, options = {}) {
       openUserProfileSheet();
       return;
     }
-    renderAssistantError(assistant, "응답 생성에 실패했습니다.\n" + err.message);
+    renderAssistantError(assistant, "응답 생성에 실패했습니다.\n" + providerErrorMessage(err));
   } finally {
     finishStreamAbort(streamAbort);
   }
@@ -99,7 +100,7 @@ export async function regenerate(turnId, targetNode = null) {
       openUserProfileSheet();
       return;
     }
-    renderAssistantError(assistant, "재생성에 실패했습니다.\n" + err.message);
+    renderAssistantError(assistant, "재생성에 실패했습니다.\n" + providerErrorMessage(err));
   } finally {
     finishStreamAbort(streamAbort);
   }
@@ -492,6 +493,10 @@ function chatCharacterAvatar() {
   ]);
 }
 
+function mobAvatar() {
+  return el("span", { className: "chat-character-avatar mob-avatar", text: "👤" });
+}
+
 function isPlotCharacterSpeaker(speaker) {
   const character = activePlotCharacter();
   const profile = parseJson(character?.profile_json);
@@ -547,7 +552,7 @@ async function stream(path, body, bubble, userNode = null, variants = [], signal
       renderAssistantStream(bubble, bubble.dataset.content || "", data.generationId, data.turnId, variants, data.messageId || "");
       bubble.classList.remove("streaming");
     }
-    if (eventName === "error") throw new Error(data.message || data.error);
+    if (eventName === "error") throw sseError(data);
   }, signal);
 }
 
@@ -577,7 +582,7 @@ function renderAssistantStream(node, content, id = "", turn = "", variants = ass
   const parts = parseSpeakerParts(content);
   node.classList.toggle("mixed-speakers", hasUserSpeaker(parts));
   const children = !content
-    ? [namedAssistantBubble(loadingBubbleNode())]
+    ? [pendingAssistantBubble()]
     : parts.length === 1 && parts[0].speaker == null
     ? [namedAssistantBubble(bubbleNode("assistant", content))]
     : parts.flatMap(speakerPartNodes);
@@ -681,16 +686,32 @@ function speakerPartNodes(part) {
       ]),
     ])];
   }
-  return [
-    part.speaker ? el("div", { className: "speaker-name", text: part.speaker }) : null,
-    bubbleNode("assistant", part.text),
-  ];
+  if (part.speaker) {
+    return [el("div", { className: "speaker-character-message" }, [
+      mobAvatar(),
+      el("div", { className: "speaker-character-content" }, [
+        el("div", { className: "speaker-name", text: part.speaker }),
+        bubbleNode("assistant", part.text),
+      ]),
+    ])];
+  }
+  return [bubbleNode("assistant", part.text)];
 }
 
 function namedAssistantBubble(bubble) {
   return el("div", { className: "speaker-assistant-message" }, [
     el("div", { className: "speaker-name", text: activeCharacterName() }),
     bubble,
+  ]);
+}
+
+function pendingAssistantBubble() {
+  return el("div", { className: "speaker-character-message pending-assistant-message" }, [
+    chatCharacterAvatar(),
+    el("div", { className: "speaker-character-content" }, [
+      el("div", { className: "speaker-name", text: activeCharacterName() }),
+      loadingBubbleNode(),
+    ]),
   ]);
 }
 

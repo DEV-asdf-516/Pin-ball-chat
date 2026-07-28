@@ -1,4 +1,4 @@
-import { settingsSheet } from "./settings-sheet.js";
+import { providerSettingsSheet, settingsSheet } from "./settings-sheet.js";
 import { userProfileSheet } from "./user-profile-sheet.js";
 import { icon } from "./icons.js";
 import { el } from "../dom.js";
@@ -40,6 +40,7 @@ export function appShell() {
       ]),
     ]),
     settingsSheet(),
+    providerSettingsSheet(),
     userProfileSheet(),
     el("div", { id: "appDialog", className: "dialog" }, [
       el("form", { id: "appDialogPanel", className: "dialog-panel" }),

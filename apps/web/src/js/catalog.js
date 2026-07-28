@@ -1,5 +1,4 @@
 import { api, apiBase, uploadFile } from "./api.js";
-import { keys } from "./config.js";
 import { $, el, parseJson, setChildren } from "./dom.js";
 import { loadCursorPage } from "./paging.js";
 import { notify, state } from "./state.js";
@@ -115,10 +114,8 @@ export function findPlot(id) {
 
 export function renderPlots() {
   const q = $("searchInput").value.trim().toLowerCase();
-  const recent = parseJson(localStorage.getItem(keys.recent));
   const plots = catalogItems("plots")
-    .filter((plot) => !q || plotHaystack(plot).includes(q))
-    .sort((a, b) => (recent[b.id] || 0) - (recent[a.id] || 0) || a.id.localeCompare(b.id));
+    .filter((plot) => !q || plotHaystack(plot).includes(q));
   setChildren($("plotList"), plots.length ? plots.map(plotCard) : [el("div", { className: "empty", text: "로드된 플롯이 없습니다." })]);
 }
 

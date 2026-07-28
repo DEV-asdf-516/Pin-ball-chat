@@ -32,6 +32,133 @@
   display: none !important;
 }
 
+.provider-settings-content {
+  display: grid;
+  gap: 8px;
+}
+
+.provider-settings-content.provider-connection-list {
+  gap: 0;
+}
+
+.provider-dialog-panel {
+  max-height: min(76dvh, 620px);
+  overflow: auto;
+}
+
+.provider-connections-link {
+  width: 100%;
+  min-height: 64px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18px;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.provider-connections-link:hover,
+.provider-connections-link:focus-visible {
+  background: var(--surface-raised);
+}
+
+.provider-connections-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.provider-connections-copy strong,
+.provider-connections-copy .meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-connections-copy strong {
+  font-size: 16px;
+}
+
+.provider-connections-link .ui-icon {
+  justify-self: center;
+  color: var(--text-2);
+}
+
+.provider-connection {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 18px;
+  gap: 10px;
+  align-items: center;
+  min-height: 64px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.provider-connection:first-child {
+  border-top: 1px solid var(--border);
+}
+
+.provider-connection:hover,
+.provider-connection:focus-visible {
+  background: var(--surface-raised);
+}
+
+.provider-connection-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.provider-connection-copy strong,
+.provider-connection-copy .meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-connection-copy strong {
+  font-size: 16px;
+}
+
+.provider-connection .connection-status {
+  white-space: nowrap;
+}
+
+.provider-connection-chevron {
+  color: var(--muted);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.provider-settings-content .device-code {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.connection-status {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.connection-status.connected {
+  color: var(--accent);
+}
+
+.connection-status.error {
+  color: var(--danger);
+}
+
 .search-field {
   position: relative;
   display: block;
@@ -356,21 +483,29 @@
 
 .select-button {
   width: 100%;
-  justify-content: space-between;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20px;
+  gap: 8px;
   align-items: center;
   min-height: 40px;
-  padding: 0 36px 0 11px;
+  padding: 0 10px 0 11px;
   border: 1px solid var(--border);
   background: var(--input-bg);
   color: var(--text);
-  position: relative;
+  text-align: left;
 }
 
-.select-button::after {
-  content: "⌄";
-  position: absolute;
-  right: 12px;
+.select-button-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-button .ui-icon {
+  width: 18px;
+  height: 18px;
+  justify-self: center;
   color: var(--text-2);
 }
 
@@ -452,6 +587,7 @@
 }
 
 .genre-picker {
+  container-type: inline-size;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
@@ -464,6 +600,8 @@
   border: 1px solid var(--border);
   background: var(--surface-raised);
   color: var(--text-2);
+  white-space: nowrap;
+  font-size: clamp(10px, 4cqw, 14px);
 }
 
 .genre-chip.active {
@@ -595,6 +733,10 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.mob-avatar {
+  font-size: 16px;
 }
 
 .speaker-character-message {
@@ -1083,6 +1225,33 @@
   background: var(--surface);
 }
 
+#plotCreateForm.form-page {
+  min-height: 100%;
+}
+
+#plotCreateForm [data-form-panel] {
+  align-content: start;
+}
+
+#plotCreateSource,
+#plotManageSource {
+  min-height: 200px;
+}
+
+#plotCreateCharacterSource,
+#plotManageCharacterSource {
+  min-height: 160px;
+}
+
+#plotCreateForm textarea,
+#plotManageForm textarea {
+  field-sizing: content;
+  height: auto;
+  max-height: none;
+  overflow-y: hidden;
+  resize: vertical;
+}
+
 .form-card h2 {
   margin: 0;
   font-size: 16px;
@@ -1186,7 +1355,9 @@
 }
 
 .file-input {
-  position: absolute;
+  position: fixed;
+  top: 0;
+  left: 0;
   width: 1px;
   height: 1px;
   opacity: 0;
@@ -1278,12 +1449,6 @@
   overflow: auto;
 }
 
-#plotManageSource {
-  height: auto;
-  max-height: none;
-  overflow: auto;
-}
-
 .settings-section {
   display: grid;
   gap: 10px;
@@ -1342,7 +1507,7 @@
   border-radius: 999px;
   padding: 8px 14px;
   display: none;
-  z-index: 20;
+  z-index: 40;
   font-size: 13px;
   line-height: 1.35;
   text-align: center;
@@ -1351,4 +1516,18 @@
 
 .toast.show {
   display: block;
+}
+
+.auth-bridge {
+  width: min(360px, calc(100vw - 32px));
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  text-align: center;
+}
+
+.auth-bridge p {
+  margin: 12px 0 0;
+  color: var(--muted);
 }

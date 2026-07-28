@@ -20,6 +20,17 @@ export function setChildren(parent, children) {
   parent.replaceChildren(...children.filter(Boolean));
 }
 
+export function bindGrowingTextarea(input) {
+  if (!input) return () => {};
+  const resize = () => {
+    input.style.height = "auto";
+    input.style.height = `${Math.max(input.scrollHeight, parseFloat(getComputedStyle(input).minHeight) || 0)}px`;
+  };
+  input.addEventListener("input", resize);
+  resize();
+  return resize;
+}
+
 export function parseJson(value) {
   try {
     return value ? JSON.parse(value) : {};
@@ -32,7 +43,7 @@ export function toast(message) {
   clearTimeout(toast.timer);
   $("toast").textContent = message;
   $("toast").classList.add("show");
-  toast.timer = setTimeout(() => $("toast").classList.remove("show"), 1300);
+  toast.timer = setTimeout(() => $("toast").classList.remove("show"), 1600);
 }
 
 export function confirmDialog(message, options = {}) {
