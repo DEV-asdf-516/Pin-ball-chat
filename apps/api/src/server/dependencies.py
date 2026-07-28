@@ -3,11 +3,11 @@ from typing import Annotated
 
 from fastapi import Depends
 
-from core.db import connect, init_db
+from core.db import connect, init_db, session
 
 
 def get_db_conn():
-    with connect() as conn:
+    with session(connect) as conn:
         init_db(conn)
         yield conn
 

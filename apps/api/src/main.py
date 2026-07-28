@@ -2,7 +2,7 @@ import argparse
 import json
 from pathlib import Path
 
-from core.db import ROOT, connect, init_db
+from core.db import ROOT, connect, init_db, session
 from domain.catalog.importer import import_catalog
 
 
@@ -13,7 +13,7 @@ def main():
     args = parser.parse_args()
     root = args.root or ROOT
     
-    with connect() as conn:
+    with session(connect) as conn:
         init_db(conn)
         errors = import_catalog(conn, root) if args.command == "load" else []
         print(json.dumps({"ok": not errors, "errors": errors}, ensure_ascii=False))

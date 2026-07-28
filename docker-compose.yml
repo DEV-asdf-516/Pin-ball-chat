@@ -2,7 +2,7 @@ services:
   ollama:
     image: ollama/ollama:latest
     ports:
-      - "11435:11434"
+      - "127.0.0.1:11435:11434"
     volumes:
       - ./data/ollama:/root/.ollama
 
@@ -18,8 +18,21 @@ services:
       AI_PROVIDER: ollama
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       AI_STREAM_DEBUG_TIMING: "1"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     volumes:
       - ./data:/app/data
+      - codex-credentials:/var/lib/pinballchat-runtime/codex-home
+      - claude-credentials:/var/lib/pinballchat-runtime/claude-home
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /var/lib/pinballchat-runtime/scratch:mode=0700
+      - /tmp:mode=0700
     depends_on:
       - ollama
 
@@ -29,13 +42,14 @@ services:
       - "3000:80"
     volumes:
       - ./apps/web/src:/usr/share/nginx/html:ro
+      - ./apps/web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - api
 
   trainer-api:
     build: { context: ., dockerfile: trainer/api/Dockerfile }
     profiles: [trainer]
-    ports: ["8090:8090"]
+    ports: ["127.0.0.1:8090:8090"]
     environment:
       TRAINER_ROOT: /workspace/trainer
       TRAINER_DB_PATH: /workspace/trainer/data/trainer.sqlite
@@ -64,3 +78,7 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+volumes:
+  codex-credentials:
+  claude-credentials:

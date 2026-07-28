@@ -179,6 +179,36 @@ class ModelsResponse(BaseModel):
     models: list[str]
 
 
+class ProviderConnectionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    provider: str
+    status: str
+    action_required: str | None = Field(default=None, alias="actionRequired")
+    credential_type: str = Field(alias="credentialType")
+    runtime_version: str | None = Field(default=None, alias="runtimeVersion")
+    resolved_auth_mode: str | None = Field(default=None, alias="resolvedAuthMode")
+    account_label: str | None = Field(default=None, alias="accountLabel")
+    plan: str | None = None
+    verification_url: str | None = Field(default=None, alias="verificationUrl")
+    user_code: str | None = Field(default=None, alias="userCode")
+
+
+class ProviderConnectionsResponse(BaseModel):
+    providers: list[ProviderConnectionResponse]
+
+
+class ProviderLoginResponse(BaseModel):
+    provider: str
+    verification_url: str | None = Field(default=None, alias="verificationUrl")
+    user_code: str | None = Field(default=None, alias="userCode")
+    status: str = "login_pending"
+
+
+class ProviderLoginCodeRequest(CamelModel):
+    code: str
+
+
 class ConversationResponse(BaseModel):
     conversationId: str
     plotId: str

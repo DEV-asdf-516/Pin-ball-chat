@@ -25,6 +25,7 @@ from dbkit import (
     new_id,
     paginate,
     select_cols,
+    session,
     update,
     upsert,
 )
@@ -61,6 +62,7 @@ __all__ = [
     "new_id",
     "paginate",
     "select_cols",
+    "session",
     "update",
     "upsert",
 ]

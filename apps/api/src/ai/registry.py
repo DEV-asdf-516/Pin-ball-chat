@@ -1,24 +1,32 @@
 from ai.settings import DEFAULT_AI_PROVIDER, DEFAULT_NUM_CTX, DEFAULT_NUM_PREDICT
-from ai.specs import GenerateRequest
+from ai.specs import GenerateRequest, ProviderName
 from ai.providers.base import AIProvider
 from ai.providers.anthropic import AnthropicProvider
+from ai.providers.claude_cli import ClaudeCliProvider
 from ai.providers.gemini import GeminiProvider
 from ai.providers.ollama import OllamaProvider, to_ollama_payload
 from ai.providers.openai import OpenAIProvider
+from ai.providers.openai_codex import OpenAICodexProvider
 from ai.providers.stub import LocalStubProvider
 
-_PROVIDERS: dict[str, AIProvider] = {
-    "local-stub": LocalStubProvider(),
-    "ollama": OllamaProvider(),
-    "openai": OpenAIProvider(),
-    "anthropic": AnthropicProvider(),
-    "gemini": GeminiProvider(),
+_PROVIDERS: dict[ProviderName, AIProvider] = {
+    ProviderName.LOCAL_STUB: LocalStubProvider(),
+    ProviderName.OLLAMA: OllamaProvider(),
+    ProviderName.OPENAI: OpenAIProvider(),
+    ProviderName.OPENAI_CODEX: OpenAICodexProvider(),
+    ProviderName.ANTHROPIC: AnthropicProvider(),
+    ProviderName.CLAUDE_CLI: ClaudeCliProvider(),
+    ProviderName.GEMINI: GeminiProvider(),
 }
+
+
+def get_provider(provider_name: str) -> AIProvider | None:
+    return _PROVIDERS.get(provider_name)
 
 
 def resolve_provider(provider_name: str | None = None, model: str = "local-stub") -> AIProvider:
     if model == "local-stub":
-        return _PROVIDERS["local-stub"]
+        return _PROVIDERS[ProviderName.LOCAL_STUB]
 
     name: str = provider_name or DEFAULT_AI_PROVIDER
 
@@ -31,7 +39,7 @@ def resolve_provider(provider_name: str | None = None, model: str = "local-stub"
 
 
 def runtime_params(req: GenerateRequest, provider_name: str | None = None, fallback_applied: bool = False) -> dict:
-    provider_name_resolved: str = resolve_provider(provider_name, req.model).name
+    provider_name_resolved: ProviderName = resolve_provider(provider_name, req.model).name
 
     params: dict = {
         "model": req.model,
@@ -42,8 +50,8 @@ def runtime_params(req: GenerateRequest, provider_name: str | None = None, fallb
         "disableThinking": False,
     }
 
-    
-    if provider_name_resolved == "ollama":
+
+    if provider_name_resolved == ProviderName.OLLAMA:
         payload: dict = to_ollama_payload(req)
         
         params.update({

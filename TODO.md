@@ -25,6 +25,7 @@
 - [x] 플롯 인트로(시작 장면) — `plot_json.intro.blocks`(assistant/user 2타입)를 유저 프로필 확정 시점에 실제 messages row로 materialize (`docs/intro-final.md`). 별도 introMessages API 없이 기존 메시지 목록/프롬프트 히스토리/롤링 요약이 그대로 처리
 - [x] 이미지 업로드 엔드포인트 (`POST /api/uploads/{kind}/{item_id}`, multipart, `data/uploads/{kind}/{id}.{ext}`에 저장 후 `avatarUrl`을 catalog item에 반영, `/uploads`로 정적 서빙). 프론트도 제작·수정 시 이 엔드포인트 사용
 - [ ] 대화 내보내기 기능
+- [ ] claude generation/logout TOCTOU 해소
 
 ## API 있음 / UI 없음
 - [x] 유저 프로필 생성/수정/삭제 UI (`POST/PUT/DELETE /api/user-profiles`)

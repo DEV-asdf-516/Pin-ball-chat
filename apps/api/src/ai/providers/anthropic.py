@@ -3,15 +3,15 @@ from typing import AsyncIterator
 import httpx
 
 from ai.settings import ANTHROPIC_API_VERSION, ANTHROPIC_BASE_URL, ANTHROPIC_TEMPERATURE, ANTHROPIC_TIMEOUT, DEFAULT_NUM_PREDICT
-from ai.errors import EmptyOutputError, ProviderBadGatewayError
+from ai.errors import EmptyOutputError, ProviderErrorCode, ProviderRuntimeError, classify_provider_error
 from ai.transport.http_client import HttpClient
 from ai.transport.http_errors import translate_http_errors
-from ai.specs import GenerateRequest
+from ai.specs import GenerateRequest, ProviderConnection, ProviderName
 from ai.providers.base import AIProvider
 from ai.providers.timing import log_stream_timing
 from ai.transport.sse import aiter_sse_events
 from util.env_util import require_env
-from util.safe_util import get_safe_dict
+from util.safe_util import get_safe_dict, get_safe_str
 
 
 _ENDPOINT = ANTHROPIC_BASE_URL.rstrip("/") + "/v1/messages"
@@ -29,7 +29,7 @@ def to_anthropic_payload(req: GenerateRequest) -> dict:
 
 
 class AnthropicProvider(AIProvider):
-    name = "anthropic"
+    name = ProviderName.ANTHROPIC
 
     def _headers(self) -> dict:
         return {
@@ -42,35 +42,54 @@ class AnthropicProvider(AIProvider):
     async def stream(self, req: GenerateRequest) -> AsyncIterator[str]:
         payload: dict = to_anthropic_payload(req)
         client: httpx.AsyncClient = HttpClient().get()
-        async with (
-            client.stream("POST", _ENDPOINT, json=payload, headers=self._headers(), timeout=ANTHROPIC_TIMEOUT) as res,
-            translate_http_errors(self.name),
-        ):
+        async with (client.stream("POST", _ENDPOINT, json=payload, headers=self._headers(), timeout=ANTHROPIC_TIMEOUT) as res,translate_http_errors(self.name)):
             res: httpx.Response
             res.raise_for_status()
             emitted_content: bool = False
+            
             async for event in aiter_sse_events(res):
-                if event.get("type") == "error":
+                event_type: str = get_safe_str(event, "type")
+
+                if event_type == "error":
                     err: dict = get_safe_dict(event, "error")
-                    raise ProviderBadGatewayError(err.get("message") or "anthropic stream error")
+                    raise classify_provider_error(self.name, err)
 
-                if event.get("type") != "content_block_delta":
+                if event_type== "content_block_start":
+                    block: dict = get_safe_dict(event, "content_block")
+                    
+                    if block.get("type") in {"tool_use", "server_tool_use"}:
+                        raise ProviderRuntimeError(
+                            ProviderErrorCode.PROVIDER_CONTRACT_VIOLATION, 
+                            "Anthropic attempted a prohibited tool action", 
+                            self.name
+                        )
+
                     continue
-                delta: dict = get_safe_dict(event, "delta")
 
-                if delta.get("type") != "text_delta" or not delta.get("text"):
+                if event_type != "content_block_delta":
+                    continue
+
+                delta: dict = get_safe_dict(event, "delta")
+                text: str = delta.get("text")
+
+                if delta.get("type") != "text_delta" or not text:
                     continue
 
                 emitted_content = True
-                yield delta["text"]
+                yield text
 
             if not emitted_content:
                 raise EmptyOutputError("anthropic produced no content")
 
     async def list_models(self) -> list[str]:
         url: str = ANTHROPIC_BASE_URL.rstrip("/") + "/v1/models"
+        
         client: httpx.AsyncClient = HttpClient().get()
+        
         async with translate_http_errors(self.name):
             res: httpx.Response = await client.get(url, headers=self._headers(), timeout=ANTHROPIC_TIMEOUT)
             res.raise_for_status()
             return [m["id"] for m in res.json().get("data", [])]
+
+    async def connection(self) -> ProviderConnection:
+        return self._connection(credential_type="authorization_key", auth_mode="anthropic_api_key", env_name="ANTHROPIC_API_KEY")

@@ -3,7 +3,7 @@ from typing import Callable
 
 import httpx
 
-from ai.errors import ProviderBadGatewayError, ProviderTimeoutError
+from ai.errors import ProviderBadGatewayError, ProviderRuntimeError, ProviderTimeoutError, classify_provider_error
 
 
 @asynccontextmanager
@@ -14,7 +14,7 @@ async def translate_http_errors(provider_name: str, should_translate: Callable[[
     try:
         yield
     except httpx.TimeoutException as exc:
-        raise ProviderTimeoutError(f"{provider_name} request timed out") from exc
+        raise ProviderTimeoutError(f"{provider_name} request timed out", provider=provider_name) from exc
     except httpx.HTTPStatusError as exc:
         try:
             if not exc.response.is_closed:
@@ -22,6 +22,21 @@ async def translate_http_errors(provider_name: str, should_translate: Callable[[
             error_body: str = exc.response.text
         except (httpx.ResponseNotRead, httpx.StreamClosed):
             error_body = exc.response.reason_phrase
+        
         if should_translate(exc, error_body):
-            raise ProviderBadGatewayError(f"{provider_name} returned {exc.response.status_code}: {error_body}") from exc
+            try:
+                payload = exc.response.json()
+            except (ValueError, TypeError):
+                payload = None
+            
+            provider_error = payload.get("error") if isinstance(payload, dict) and isinstance(payload.get("error"), dict) else payload
+            provider_error = provider_error if isinstance(provider_error, dict) else {}
+      
+            provider_error.setdefault("status", exc.response.status_code)
+            
+            classified = classify_provider_error(provider_name, provider_error)
+            
+            if isinstance(classified, ProviderRuntimeError):
+                raise classified from exc
+            raise ProviderBadGatewayError(f"{provider_name} returned {exc.response.status_code}", provider_name) from exc
         raise

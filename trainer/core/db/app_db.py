@@ -6,7 +6,7 @@ import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Generator
 
 from dbkit import RawSQL, fetch_all
 
@@ -15,7 +15,7 @@ from ...domain.datasets import validate_format
 
 
 @contextmanager
-def app_db_connection() -> Iterator[sqlite3.Connection]:
+def app_db_connection() -> Generator[sqlite3.Connection]:
     # Open the operating application's database with SQLite read-only mode.
     db_path: Path = Path(os.environ.get(
         "APP_DB_PATH", "./data/pinballchat.sqlite")).resolve()

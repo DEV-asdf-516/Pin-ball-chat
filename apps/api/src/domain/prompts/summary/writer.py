@@ -4,7 +4,7 @@ import sqlite3
 
 from ai.registry import stream_text
 from ai.specs import GenerateRequest, Message
-from core.db import DATA_ROOT, Bind, RawSQL, ReadQuery, WriteQuery, connect, fetch_all, fetch_one, find_one, init_db, update
+from core.db import DATA_ROOT, Bind, RawSQL, ReadQuery, WriteQuery, connect, fetch_all, fetch_one, find_one, init_db, session, update
 from domain.conversations.reader import active_messages_sql
 from domain.conversations.specs import CONVERSATIONS
 from domain.prompts.context import RECENT_WINDOW, SUMMARY_TRIGGER, build_ctx, described, render_value, resolve_prompt_context
@@ -24,7 +24,7 @@ _SUMMARY_SYSTEM_PROMPT_PATH = DATA_ROOT / "rules" / "summary_system_prompt.json"
 # SUMMARY_TRIGGER개 이상 쌓였을 때만 이전 요약과 합쳐 새 요약을 만든다.
 async def maybe_update_summary(conversation_id: str) -> None:
     try:
-        with connect() as conn:
+        with session(connect) as conn:
             init_db(conn)
 
             conv: dict | None = find_one(conn, ReadQuery.by_id(CONVERSATIONS, conversation_id))

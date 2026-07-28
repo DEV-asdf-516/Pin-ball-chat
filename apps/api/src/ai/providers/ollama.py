@@ -6,14 +6,14 @@ from typing import AsyncIterator
 
 import httpx
 
-from ai.settings import DEFAULT_NUM_CTX, DEFAULT_NUM_PREDICT, OLLAMA_KEEP_ALIVE, OLLAMA_OPTIONS, OLLAMA_TIMEOUT
-from ai.errors import EmptyOutputError
+from ai.settings import DEFAULT_NUM_CTX, DEFAULT_NUM_PREDICT, OLLAMA_BASE_URL, OLLAMA_KEEP_ALIVE, OLLAMA_OPTIONS, OLLAMA_TIMEOUT
+from ai.errors import EmptyOutputError, ProviderErrorCode, ProviderRuntimeError
 from ai.transport.http_client import HttpClient
 from ai.transport.http_errors import translate_http_errors
-from ai.specs import GenerateRequest
+from ai.specs import GenerateRequest, ProviderConnection, ProviderName
 from ai.providers.base import AIProvider
 from ai.providers.timing import log_stream_timing
-from util.safe_util import get_safe_dict
+from util.safe_util import get_safe_dict, get_safe_str
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ def _is_bad_gateway(exc: httpx.HTTPStatusError, body: str) -> bool:
 
 
 def _base_url() -> str:
-    base_url: str | None = os.environ.get("OLLAMA_BASE_URL")
+    base_url: str | None = OLLAMA_BASE_URL
     if not base_url:
         raise ValueError("OLLAMA_BASE_URL is missing")
     return base_url
@@ -61,7 +61,7 @@ def to_ollama_payload(req: GenerateRequest) -> dict:
 
 
 class OllamaProvider(AIProvider):
-    name = "ollama"
+    name = ProviderName.OLLAMA
 
     @log_stream_timing
     async def stream(self, req: GenerateRequest) -> AsyncIterator[str]:
@@ -85,7 +85,12 @@ class OllamaProvider(AIProvider):
                     continue
 
                 chunk: dict = json.loads(line)
-                content: str | None = get_safe_dict(chunk, "message").get("content")
+                message: dict = get_safe_dict(chunk, "message")
+                
+                if message.get("tool_calls"):
+                    raise ProviderRuntimeError(ProviderErrorCode.PROVIDER_CONTRACT_VIOLATION, "Ollama attempted a prohibited tool action", self.name)
+                
+                content: str = get_safe_str(message, "content")
 
                 if content:
                     emitted_content = True
@@ -127,3 +132,27 @@ class OllamaProvider(AIProvider):
             res: httpx.Response = await client.get(url, timeout=OLLAMA_TIMEOUT)
             res.raise_for_status()
             return [m["name"] for m in res.json().get("models", [])]
+
+    async def connection(self) -> ProviderConnection:
+        if not OLLAMA_BASE_URL:
+            return ProviderConnection(
+                provider=self.name,
+                status="disconnected",
+                action_required=ProviderErrorCode.OLLAMA_URL_REQUIRED,
+                credential_type="none",
+            )
+        try:
+            client: httpx.AsyncClient = HttpClient().get()
+            response = await client.get(f"{OLLAMA_BASE_URL.rstrip('/')}/api/tags", timeout=OLLAMA_TIMEOUT)
+            response.raise_for_status()
+            status, action_required = "connected", None
+        except httpx.HTTPError:
+            status, action_required = "error", ProviderErrorCode.OLLAMA_UNAVAILABLE
+
+        return ProviderConnection(
+            provider=self.name,
+            status=status,
+            action_required=action_required,
+            credential_type="none",
+            resolved_auth_mode="local" if status == "connected" else None,
+        )

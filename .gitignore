@@ -10,6 +10,8 @@ __MACOSX/
 venv/
 
 .claude/
+.codex/
+.vscode/
 .idea/
 docs/
 *.db

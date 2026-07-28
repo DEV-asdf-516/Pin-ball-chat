@@ -1,5 +1,7 @@
 import sqlite3
 import uuid
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from pathlib import Path
 
 from dbkit.specs import Bind, CursorQuery, Eq, Gt, In, Lt, Ne, NotIn, OrderBy, ReadQuery, RawSQL, TableSpec, WriteQuery
@@ -23,6 +25,18 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
+
+@contextmanager
+def session(connect_fn: Callable[[], sqlite3.Connection]) -> Generator[sqlite3.Connection]:
+    # sqlite3.Connection.__exit__는 commit/rollback만 하고 close()는 하지 않으므로,
+    # 여기서 명시적으로 닫아 커넥션이 새지 않게 한다 (안 닫으면 WAL 체크포인트가 막힌다).
+    conn: sqlite3.Connection = connect_fn()
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def init_db(conn: sqlite3.Connection, schema_ddl: str, table_names: list[str]) -> None:

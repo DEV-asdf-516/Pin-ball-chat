@@ -33,5 +33,5 @@ def _parse_block(lines: list[str]) -> dict | None:
         return None
     try:
         return json.loads(data)
-    except json.JSONDecodeError:
-        return None
+    except json.JSONDecodeError as exc:
+        raise ValueError("provider returned malformed SSE JSON") from exc

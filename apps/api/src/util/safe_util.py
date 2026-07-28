@@ -1,3 +1,7 @@
+def get_safe_str(source: dict, key: str) -> str:
+    return source.get(key) or ""
+
+
 def get_safe_dict(source: dict, key: str) -> dict:
     return source.get(key) or {}
 
