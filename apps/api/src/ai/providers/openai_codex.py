@@ -4,7 +4,7 @@ from ai.auth import codex_auth
 from ai.errors import ProviderConnectionBusyError, ProviderErrorCode
 from ai.providers.base import LoginCapableProvider
 from ai.providers.timing import log_stream_timing
-from ai.runtime.codex_runtime import runtime
+from ai.runtime.codex.runtime import runtime
 from ai.specs import GenerateRequest, ProviderConnection, ProviderName
 
 
@@ -21,10 +21,10 @@ class OpenAICodexProvider(LoginCapableProvider):
 
     async def connection(self) -> ProviderConnection:
         try:
-            result = await codex_auth.session.account()
+            result = await codex_auth.session.read_account()
             account = result.get("account") or {}
             connected = account.get("type") == "chatgpt"
-            login = codex_auth.session.login_state()
+            login = codex_auth.session.get_login_state()
             return ProviderConnection(
                 provider=self.name,
                 status="connected" if connected else login["status"],
@@ -41,7 +41,7 @@ class OpenAICodexProvider(LoginCapableProvider):
             return self._connection_from_error(credential_type="subscription_oauth", exc=exc)
 
     async def start_login(self) -> dict:
-        return await codex_auth.session.login()
+        return await codex_auth.session.start_login()
 
     async def logout(self) -> None:
         if runtime.has_active_turns:

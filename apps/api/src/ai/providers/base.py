@@ -2,7 +2,7 @@ import os
 from abc import ABC, abstractmethod
 from typing import AsyncIterator
 
-from ai.errors import ProviderErrorCode, ProviderRuntimeError, ProviderTimeoutError
+from ai.errors import ProviderErrorCode, provider_failure_code
 from ai.specs import GenerateRequest, ProviderConnection, ProviderName
 from util.singleton import Singleton
 
@@ -31,13 +31,7 @@ class AIProvider(Singleton, ABC):
         )
 
     def _connection_from_error(self, credential_type: str, exc: Exception) -> ProviderConnection:
-
-        if isinstance(exc, ProviderTimeoutError):
-            action_required = ProviderErrorCode.PROVIDER_TIMEOUT
-        elif isinstance(exc, ProviderRuntimeError):
-            action_required = exc.code
-        else:
-            action_required = ProviderErrorCode.PROVIDER_BAD_GATEWAY
+        action_required = provider_failure_code(exc)
 
         return ProviderConnection(
             provider=self.name,

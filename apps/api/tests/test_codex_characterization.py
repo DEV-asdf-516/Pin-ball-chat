@@ -6,8 +6,9 @@ from contextlib import ExitStack
 from unittest.mock import AsyncMock, Mock, patch
 
 from ai.errors import ProviderErrorCode, ProviderRuntimeError, ProviderTimeoutError
+from ai.auth import codex_auth
 from ai.auth.codex_auth import CodexAuthSession, shutdown_codex
-from ai.runtime.codex_runtime import CodexAppServer, _RUNTIME_ROOT
+from ai.runtime.codex.runtime import CodexAppServer, _RUNTIME_ROOT
 from ai.specs import GenerateRequest, Message
 
 
@@ -51,7 +52,7 @@ class CodexCharacterizationTests(unittest.IsolatedAsyncioTestCase):
     async def test_thread_start_ephemeral_not_bool_schedules_cleanup_then_raises(self):
         app_server = CodexAppServer()
 
-        async def request_rpc(method, params, *_args):
+        async def request_rpc(method, params, *_args, **_kwargs):
             if method == "account/read":
                 return {"account": {"type": "chatgpt"}}
             if method == "thread/start":
@@ -59,8 +60,8 @@ class CodexCharacterizationTests(unittest.IsolatedAsyncioTestCase):
             raise AssertionError(method)
 
         with (
-            patch.object(app_server, "_start", new=AsyncMock()),
-            patch.object(app_server, "_timed_request", side_effect=request_rpc),
+            patch.object(app_server, "ensure_started", new=AsyncMock()),
+            patch.object(app_server, "rpc", side_effect=request_rpc),
             patch.object(app_server, "_schedule_thread_cleanup", new=Mock()) as cleanup,
         ):
             with self.assertRaisesRegex(ProviderRuntimeError, "no ephemeral state"):
@@ -71,7 +72,7 @@ class CodexCharacterizationTests(unittest.IsolatedAsyncioTestCase):
     async def test_thread_start_invalid_thread_id_skips_cleanup(self):
         app_server = CodexAppServer()
 
-        async def request_rpc(method, params, *_args):
+        async def request_rpc(method, params, *_args, **_kwargs):
             if method == "account/read":
                 return {"account": {"type": "chatgpt"}}
             if method == "thread/start":
@@ -79,8 +80,8 @@ class CodexCharacterizationTests(unittest.IsolatedAsyncioTestCase):
             raise AssertionError(method)
 
         with (
-            patch.object(app_server, "_start", new=AsyncMock()),
-            patch.object(app_server, "_timed_request", side_effect=request_rpc),
+            patch.object(app_server, "ensure_started", new=AsyncMock()),
+            patch.object(app_server, "rpc", side_effect=request_rpc),
             patch.object(app_server, "_schedule_thread_cleanup", new=Mock()) as cleanup,
         ):
             with self.assertRaisesRegex(ProviderRuntimeError, "no thread ID"):
@@ -91,7 +92,7 @@ class CodexCharacterizationTests(unittest.IsolatedAsyncioTestCase):
     async def test_turn_start_exception_schedules_cleanup_with_correct_persisted(self):
         app_server = CodexAppServer()
 
-        async def request_rpc(method, params, *_args):
+        async def request_rpc(method, params, *_args, **_kwargs):
             if method == "account/read":
                 return {"account": {"type": "chatgpt"}}
             if method == "thread/start":
@@ -101,8 +102,8 @@ class CodexCharacterizationTests(unittest.IsolatedAsyncioTestCase):
             raise AssertionError(method)
 
         with (
-            patch.object(app_server, "_start", new=AsyncMock()),
-            patch.object(app_server, "_timed_request", side_effect=request_rpc),
+            patch.object(app_server, "ensure_started", new=AsyncMock()),
+            patch.object(app_server, "rpc", side_effect=request_rpc),
             patch.object(app_server, "_schedule_thread_cleanup", new=Mock()) as cleanup,
         ):
             with self.assertRaisesRegex(ProviderRuntimeError, "boom"):
@@ -114,7 +115,7 @@ class CodexCharacterizationTests(unittest.IsolatedAsyncioTestCase):
     async def test_turn_start_malformed_response_schedules_cleanup_with_correct_persisted(self):
         app_server = CodexAppServer()
 
-        async def request_rpc(method, params, *_args):
+        async def request_rpc(method, params, *_args, **_kwargs):
             if method == "account/read":
                 return {"account": {"type": "chatgpt"}}
             if method == "thread/start":
@@ -124,8 +125,8 @@ class CodexCharacterizationTests(unittest.IsolatedAsyncioTestCase):
             raise AssertionError(method)
 
         with (
-            patch.object(app_server, "_start", new=AsyncMock()),
-            patch.object(app_server, "_timed_request", side_effect=request_rpc),
+            patch.object(app_server, "ensure_started", new=AsyncMock()),
+            patch.object(app_server, "rpc", side_effect=request_rpc),
             patch.object(app_server, "_schedule_thread_cleanup", new=Mock()) as cleanup,
         ):
             with self.assertRaisesRegex(ProviderRuntimeError, "no turn ID"):
@@ -145,15 +146,15 @@ class CodexCharacterizationTests(unittest.IsolatedAsyncioTestCase):
         async def request_rpc(method, params, *_args, **_kwargs):
             if method == "account/login/start":
                 # 실제 reader가 account/login/completed를 먼저 처리한 상황을 흉내낸다.
-                session._login_state = {"status": "connected", "verificationUrl": None, "userCode": None, "errorCode": None}
+                session._login_state = codex_auth._CodexLoginState(status="connected")
                 return {"type": "chatgptDeviceCode", "loginId": "login-1", "verificationUrl": "https://example.com", "userCode": "ABCD"}
             raise AssertionError(method)
 
         with (
-            patch.object(app_server, "_start", new=AsyncMock()),
-            patch.object(app_server, "_timed_request", side_effect=request_rpc),
+            patch.object(app_server, "ensure_started", new=AsyncMock()),
+            patch.object(app_server, "rpc", side_effect=request_rpc),
         ):
-            result = await session._login()
+            result = await session.start_login()
 
         self.assertEqual(result, {"status": "connected", "verificationUrl": None, "userCode": None, "errorCode": None})
         self.assertIsNone(session._login_timeout_task)
@@ -167,13 +168,13 @@ class CodexCharacterizationTests(unittest.IsolatedAsyncioTestCase):
         session = CodexAuthSession(app_server)
 
         with (
-            patch.object(app_server, "_start", new=AsyncMock()),
-            patch.object(app_server, "_request", new=AsyncMock(side_effect=_hang)),
+            patch.object(app_server, "ensure_started", new=AsyncMock()),
+            patch.object(app_server, "call_runtime", new=AsyncMock(side_effect=_hang)),
             patch.object(app_server, "_terminate_runtime", new=AsyncMock()) as terminate,
             patch("ai.auth.codex_auth.RUNTIME_INTERRUPT_GRACE_SECONDS", 0.01),
         ):
             with self.assertRaises(ProviderTimeoutError) as ctx:
-                await session._logout()
+                await session.logout()
 
         self.assertEqual(ctx.exception.phase, "interrupt")
         terminate.assert_awaited()
@@ -197,7 +198,7 @@ class CodexCharacterizationTests(unittest.IsolatedAsyncioTestCase):
                 order.append(label)
                 raise
 
-        app_server._reader_task = asyncio.create_task(sleep_forever("reader_cancelled"))
+        app_server._connection._reader_tasks.add(asyncio.create_task(sleep_forever("reader_cancelled")))
         app_server._stderr_task = asyncio.create_task(sleep_forever("stderr_cancelled"))
         session._login_timeout_task = asyncio.create_task(sleep_forever("login_timeout_cancelled"))
         # 태스크들이 asyncio.sleep(100)에 실제로 진입한 뒤에 cancel()해야 except 절이
@@ -222,7 +223,7 @@ class CodexCharacterizationTests(unittest.IsolatedAsyncioTestCase):
     async def _drive_event_to_error(self, event: dict) -> ProviderRuntimeError:
         app_server = CodexAppServer()
 
-        async def request_rpc(method, params, *_args):
+        async def request_rpc(method, params, *_args, **_kwargs):
             if method == "account/read":
                 return {"account": {"type": "chatgpt"}}
             if method == "thread/start":
@@ -232,19 +233,19 @@ class CodexCharacterizationTests(unittest.IsolatedAsyncioTestCase):
             raise AssertionError(method)
 
         with ExitStack() as stack:
-            stack.enter_context(patch.object(app_server, "_start", new=AsyncMock()))
-            stack.enter_context(patch.object(app_server, "_timed_request", side_effect=request_rpc))
-            stack.enter_context(patch.object(app_server, "_interrupt", new=AsyncMock()))
+            stack.enter_context(patch.object(app_server, "ensure_started", new=AsyncMock()))
+            stack.enter_context(patch.object(app_server, "rpc", side_effect=request_rpc))
+            stack.enter_context(patch.object(app_server, "_interrupt_turn", new=AsyncMock()))
             stack.enter_context(patch.object(app_server, "_schedule_thread_cleanup", new=Mock()))
 
             stream = app_server.stream(self._request())
             task = asyncio.create_task(anext(stream))
             for _ in range(100):
-                if "turn-1" in app_server._turn_routes:
+                if "turn-1" in app_server._router._turn_routes:
                     break
                 await asyncio.sleep(0)
-            self.assertIn("turn-1", app_server._turn_routes)
-            route = app_server._turn_routes["turn-1"]
+            self.assertIn("turn-1", app_server._router._turn_routes)
+            route = app_server._router._turn_routes["turn-1"]
             await route.queue.try_put(event)
             with self.assertRaises(ProviderRuntimeError) as ctx:
                 await task
@@ -336,7 +337,7 @@ class CodexCharacterizationTests(unittest.IsolatedAsyncioTestCase):
     async def test_error_surface_snapshot_secure_thread_contract_violation(self):
         app_server = CodexAppServer()
 
-        async def request_rpc(method, params, *_args):
+        async def request_rpc(method, params, *_args, **_kwargs):
             if method == "account/read":
                 return {"account": {"type": "chatgpt"}}
             if method == "thread/start":
@@ -344,8 +345,8 @@ class CodexCharacterizationTests(unittest.IsolatedAsyncioTestCase):
             raise AssertionError(method)
 
         with (
-            patch.object(app_server, "_start", new=AsyncMock()),
-            patch.object(app_server, "_timed_request", side_effect=request_rpc),
+            patch.object(app_server, "ensure_started", new=AsyncMock()),
+            patch.object(app_server, "rpc", side_effect=request_rpc),
             patch.object(app_server, "_schedule_thread_cleanup", new=Mock()),
         ):
             with self.assertRaises(ProviderRuntimeError) as ctx:
@@ -359,8 +360,8 @@ class CodexCharacterizationTests(unittest.IsolatedAsyncioTestCase):
     async def test_error_surface_snapshot_model_list_malformed_data(self):
         app_server = CodexAppServer()
         with (
-            patch.object(app_server, "_start", new=AsyncMock()),
-            patch.object(app_server, "_timed_request", new=AsyncMock(return_value={"data": "not-a-list"})),
+            patch.object(app_server, "ensure_started", new=AsyncMock()),
+            patch.object(app_server, "rpc", new=AsyncMock(return_value={"data": "not-a-list"})),
         ):
             with self.assertRaises(ProviderRuntimeError) as ctx:
                 await app_server.list_models()
@@ -372,8 +373,8 @@ class CodexCharacterizationTests(unittest.IsolatedAsyncioTestCase):
     async def test_error_surface_snapshot_model_list_malformed_cursor(self):
         app_server = CodexAppServer()
         with (
-            patch.object(app_server, "_start", new=AsyncMock()),
-            patch.object(app_server, "_timed_request", new=AsyncMock(return_value={"data": [], "nextCursor": 123})),
+            patch.object(app_server, "ensure_started", new=AsyncMock()),
+            patch.object(app_server, "rpc", new=AsyncMock(return_value={"data": [], "nextCursor": 123})),
         ):
             with self.assertRaises(ProviderRuntimeError) as ctx:
                 await app_server.list_models()
@@ -386,11 +387,11 @@ class CodexCharacterizationTests(unittest.IsolatedAsyncioTestCase):
         app_server = CodexAppServer()
         session = CodexAuthSession(app_server)
         with (
-            patch.object(app_server, "_start", new=AsyncMock()),
-            patch.object(app_server, "_timed_request", new=AsyncMock(return_value={"type": "chatgptDeviceCode"})),
+            patch.object(app_server, "ensure_started", new=AsyncMock()),
+            patch.object(app_server, "rpc", new=AsyncMock(return_value={"type": "chatgptDeviceCode"})),
         ):
             with self.assertRaises(ProviderRuntimeError) as ctx:
-                await session._login()
+                await session.start_login()
         self.assertEqual(
             self._error_tuple(ctx.exception),
             (ProviderErrorCode.PROVIDER_RUNTIME_INCOMPATIBLE, "codex runtime returned a malformed device login response", False, None),

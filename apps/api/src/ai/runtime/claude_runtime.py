@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import time
 from pathlib import Path
@@ -8,7 +7,7 @@ from typing import AsyncIterator, Callable
 from ai.errors import EmptyOutputError, ProviderErrorCode, ProviderRuntimeError, ProviderTimeoutError, runtime_error_factory, timeout_error_factory
 from ai.protocol.claude_protocol import ClaudeTurnPhase, ClaudeTurnStateMachine, find_structure_violation
 from ai.runtime.queue import BoundedRuntimeQueue, RuntimeQueueBlockedError, RuntimeQueueClosed
-from ai.runtime.util import RUNTIME_UMASK, AsyncOnce, GenerationGate, ProcessOutput, drain_stderr, reap_process_group, run_subprocess_capture, runtime_env
+from ai.runtime.util import RUNTIME_UMASK, AsyncOnce, GenerationGate, ProcessOutput, decode_runtime_message, drain_stderr, reap_process_group, remaining_seconds, run_subprocess_capture, runtime_env
 from ai.settings import CLAUDE_COMMAND, CLAUDE_MAX_IN_FLIGHT, CLAUDE_MODELS, CLAUDE_RUNTIME_VERSION, PINBALLCHAT_RUNTIME_ROOT, RUNTIME_FIRST_DELTA_TIMEOUT, RUNTIME_IDLE_TIMEOUT, RUNTIME_INTERRUPT_GRACE_SECONDS, RUNTIME_QUEUE_BLOCK_SECONDS, RUNTIME_QUEUE_SIZE
 from ai.specs import GenerateRequest, ProviderName
 
@@ -123,16 +122,17 @@ class ClaudeCliRuntime:
         try:
             while line := await stream.readline():
                 try:
-                    event = json.loads(line)
-                except json.JSONDecodeError:
-                    await queue.fail(_runtime_error(ProviderErrorCode.PROVIDER_RUNTIME_INCOMPATIBLE, "claude runtime emitted malformed JSON"))
+                    event: dict = decode_runtime_message(
+                        line,
+                        runtime_name="claude",
+                        non_dict_message="claude runtime emitted a malformed stream event",
+                        make_error=_runtime_error,
+                    )
+                except ProviderRuntimeError as decode_error:
+                    await queue.fail(decode_error)
                     return
 
-                if not isinstance(event, dict):
-                    await queue.fail(_runtime_error(ProviderErrorCode.PROVIDER_RUNTIME_INCOMPATIBLE, "claude runtime emitted a malformed stream event"))
-                    return
-
-                structure_violation = find_structure_violation(event)
+                structure_violation:str|None = find_structure_violation(event)
 
                 if structure_violation:
                     await queue.fail(_runtime_error(ProviderErrorCode.PROVIDER_RUNTIME_INCOMPATIBLE, structure_violation))
@@ -246,7 +246,7 @@ class ClaudeCliRuntime:
             first_delta_deadline = time.monotonic() + RUNTIME_FIRST_DELTA_TIMEOUT
 
             def first_delta_remaining() -> float:
-                return max(0.001, first_delta_deadline - time.monotonic())
+                return remaining_seconds(first_delta_deadline)
 
             process: asyncio.subprocess.Process | None = None
             stdout_task: asyncio.Task | None = None
@@ -276,6 +276,7 @@ class ClaudeCliRuntime:
                         raise _timeout_error("Claude generation timed out", phase="idle" if machine.has_emitted_text else "first_delta") from exc
                     except RuntimeQueueClosed:
                         break
+                    
                     if text := machine.consume_event(event):
                         yield text
                 

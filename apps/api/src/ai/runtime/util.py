@@ -1,13 +1,16 @@
 import asyncio
+import json
 import logging
 import os
 import signal
 import stat
+import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import AsyncGenerator, Awaitable, Callable, Generic, TypeVar
 
+from ai.errors import ProviderErrorCode, ProviderRuntimeError
 from ai.settings import PINBALLCHAT_RUNTIME_ROOT
 
 log = logging.getLogger(__name__)
@@ -66,6 +69,31 @@ async def reap_process_group(process: asyncio.subprocess.Process, grace_seconds:
     except ProcessLookupError:
         pass
     await process.wait()
+
+
+def remaining_seconds(deadline: float) -> float:
+    return max(0.001, deadline - time.monotonic())
+
+
+def decode_runtime_message(
+    line: bytes,
+    *,
+    runtime_name: str,
+    non_dict_message: str,
+    make_error: Callable[..., ProviderRuntimeError],
+) -> dict:
+    # "런타임이 보낸 JSON line은 최상위 dict여야 한다"는 계약만 공통화한다 — non_dict_message는
+    # runtime마다 문구가 다르므로(예: claude "malformed stream event" vs codex "malformed
+    # message") runtime_name으로 유도하지 않고 호출부가 그대로 전달한다.
+    try:
+        message = json.loads(line)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise make_error(ProviderErrorCode.PROVIDER_RUNTIME_INCOMPATIBLE, f"{runtime_name} runtime emitted malformed JSON") from exc
+
+    if not isinstance(message, dict):
+        raise make_error(ProviderErrorCode.PROVIDER_RUNTIME_INCOMPATIBLE, non_dict_message)
+
+    return message
 
 
 async def drain_stderr(stream: asyncio.StreamReader | None, provider: str) -> None:

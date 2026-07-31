@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from ai.transport.http_client import HttpClient
-from ai.runtime.codex_runtime import runtime as codex_runtime
+from ai.runtime.codex.runtime import runtime as codex_runtime
 from ai.auth import claude_auth
 from ai.auth.codex_auth import shutdown_codex
 from ai.errors import ProviderRuntimeError, ProviderTimeoutError
@@ -62,7 +62,8 @@ async def lifespan(_app: FastAPI):
         if errors:
             log.warning("content load errors:\n%s", "\n".join(errors))
     try:
-        await codex_runtime.startup_cleanup()
+        # 시작 시 잔존 persisted thread 정리는 ensure_started 내부에서 수행된다.
+        await codex_runtime.ensure_started()
     except ProviderRuntimeError as exc:
         log.warning("codex startup cleanup unavailable: %s", exc.code)
     except ProviderTimeoutError:
@@ -95,7 +96,11 @@ def create_app():
             return JSONResponse(status_code=400, content={"error": "invalid_host", "message": "host is not allowed"})
         origin = request.headers.get("origin")
         
-        if origin == "null" or (origin and origin not in ALLOWED_ORIGINS and not _is_local_network_origin(origin)):
+        is_unlisted_origin: bool = bool(origin) \
+            and origin not in ALLOWED_ORIGINS \
+            and not _is_local_network_origin(origin)
+
+        if origin == "null" or is_unlisted_origin:
             return JSONResponse(status_code=403, content={"error": "forbidden_origin", "message": "origin is not allowed"})
         
         return await call_next(request)

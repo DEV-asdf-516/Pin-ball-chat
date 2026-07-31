@@ -8,7 +8,7 @@ from typing import Callable
 from ai.errors import ProviderErrorCode, ProviderRuntimeError, ProviderTimeoutError, runtime_error_factory, timeout_error_factory
 from ai.specs import ProviderName
 from ai.runtime.claude_runtime import _COMMAND, _RUNTIME_ROOT, _build_runtime_env, runtime, ClaudeCliRuntime
-from ai.runtime.util import RUNTIME_UMASK, GenerationGateBusyError, reap_process_group, run_subprocess_capture
+from ai.runtime.util import RUNTIME_UMASK, GenerationGateBusyError, reap_process_group, remaining_seconds, run_subprocess_capture
 from ai.settings import RUNTIME_FIRST_DELTA_TIMEOUT, RUNTIME_INTERRUPT_GRACE_SECONDS, RUNTIME_LOGIN_TIMEOUT
 
 
@@ -20,8 +20,8 @@ _timeout_error: Callable[..., ProviderTimeoutError] = timeout_error_factory(Prov
 async def _wait_with_login_deadline(awaitable, deadline: float):
     try:
         return await asyncio.wait_for(
-            awaitable, 
-            timeout=max(0.001, deadline - time.monotonic())
+            awaitable,
+            timeout=remaining_seconds(deadline)
         )
     except TimeoutError as exc:
         raise _timeout_error("Claude login timed out", phase="login") from exc
@@ -141,8 +141,10 @@ class _ClaudeAuthSession:
             )
             return self._state, auth
 
-        if not self._has_running_attempt() \
-            and self._state.status in {"connected", "login_pending"}:
+        if (
+            not self._has_running_attempt()
+            and self._state.status in {"connected", "login_pending"}
+        ):
             self._state = _ClaudeLoginState(
                 status="disconnected", 
                 error_code=ProviderErrorCode.LOGIN_REQUIRED
@@ -194,8 +196,8 @@ class _ClaudeAuthSession:
 
         try:
             await asyncio.wait_for(
-                attempt.process.wait(), 
-                timeout=max(0.001, attempt.deadline - time.monotonic())
+                attempt.process.wait(),
+                timeout=remaining_seconds(attempt.deadline)
             )
 
             auth = await _CliAuthStatus.query()
@@ -333,8 +335,11 @@ class _ClaudeAuthSession:
 
             attempt = self._attempt
 
-            if attempt is None or attempt.process.returncode is not None \
-                 or attempt.process.stdin is None:
+            if (
+                attempt is None
+                or attempt.process.returncode is not None
+                or attempt.process.stdin is None
+            ):
                 raise _runtime_error(
                     ProviderErrorCode.PROVIDER_AUTH_REQUIRED, 
                     "Claude login is not waiting for an authorization code"

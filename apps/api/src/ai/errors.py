@@ -60,6 +60,45 @@ def timeout_error_factory(provider_name: str) -> Callable[..., ProviderTimeoutEr
     return partial(ProviderTimeoutError, provider=provider_name)
 
 
+ProviderError = ProviderTimeoutError | ProviderRuntimeError | ProviderBadGatewayError
+
+
+def provider_error_payload(exc: ProviderError, *, fallback_provider: str | None = None) -> dict:
+    if isinstance(exc, ProviderRuntimeError):
+        code = exc.code
+        retryable = exc.retryable
+        phase = exc.phase
+    elif isinstance(exc, ProviderTimeoutError):
+        code = ProviderErrorCode.PROVIDER_TIMEOUT
+        retryable = True
+        phase = exc.phase
+    else:
+        code = ProviderErrorCode.PROVIDER_BAD_GATEWAY
+        retryable = True
+        phase = None
+
+    payload = {
+        "error": code,
+        "code": code,
+        "provider": exc.provider or fallback_provider,
+        "message": str(exc),
+        "retryable": retryable,
+    }
+
+    if phase:
+        payload["phase"] = phase
+
+    return payload
+
+
+def provider_failure_code(exc: Exception) -> ProviderErrorCode | str:
+    if isinstance(exc, ProviderTimeoutError):
+        return ProviderErrorCode.PROVIDER_TIMEOUT
+    if isinstance(exc, ProviderRuntimeError):
+        return exc.code
+    return ProviderErrorCode.PROVIDER_BAD_GATEWAY
+
+
 class ErrorRule:
     def __init__(self, codes: set[str], code: ProviderErrorCode, message: str, retryable: bool = False):
         self.codes = codes

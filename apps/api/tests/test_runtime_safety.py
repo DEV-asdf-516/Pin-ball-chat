@@ -1,19 +1,21 @@
 import asyncio
+import json
 import os
 import tempfile
+import time
 import unittest
 from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
-from ai.errors import ProviderErrorCode, ProviderRuntimeError, ProviderTimeoutError, classify_provider_error
+from ai.errors import ProviderErrorCode, ProviderRuntimeError, ProviderTimeoutError, classify_provider_error, runtime_error_factory
 from ai.auth import claude_auth
 from ai.auth.claude_auth import ClaudeGenerationActiveError
 from ai.runtime.queue import BoundedRuntimeQueue
 from ai.protocol.codex_protocol import CodexTurnStateMachine
 from ai.protocol.codex_protocol import is_secure_thread as codex_is_secure_thread
-from ai.protocol.codex_protocol import parse_turn_start as codex_parse_turn_start
-from ai.protocol.codex_protocol import validate_model_page as codex_validate_model_page
+from ai.protocol.codex_protocol import parse_started_turn_id as codex_parse_turn_start
+from ai.protocol.codex_protocol import parse_model_page as codex_validate_model_page
 from ai.protocol.codex_protocol import is_valid_device_login as codex_is_valid_device_login
 from ai.protocol.claude_protocol import _classify_event_error as classify_claude_event_error
 from ai.protocol.claude_protocol import _contains_prohibited_tool_use as claude_contains_prohibited_tool_use
@@ -26,13 +28,16 @@ from ai.runtime.claude_runtime import ClaudeCliRuntime
 from ai.runtime.claude_runtime import _RUNTIME_ROOT as CLAUDE_RUNTIME_ROOT
 from ai.providers.claude_cli import ClaudeCliProvider
 from ai.protocol.codex_protocol import classify_event_error as codex_event_error
-from ai.runtime.codex_runtime import _runtime_env as codex_runtime_env
-from ai.runtime.codex_runtime import _RUNTIME_ROOT as CODEX_RUNTIME_ROOT
-from ai.runtime.codex_runtime import _TurnRoute
-from ai.runtime.codex_runtime import CodexAppServer
+from ai.runtime.codex.runtime import _build_runtime_env as codex_runtime_env
+from ai.runtime.codex.runtime import _RUNTIME_ROOT as CODEX_RUNTIME_ROOT
+from ai.runtime.codex.connection import CodexRpcConnection
+from ai.runtime.codex.router import _TurnRoute, CodexTurnRouter
+from ai.runtime.codex.runtime import CodexAppServer
+from ai.auth import codex_auth
 from ai.auth.codex_auth import CodexAuthSession
-from ai.runtime.util import GenerationGateBusyError, ProcessOutput, drain_stderr, redacted, reap_process_group
-from ai.specs import GenerateRequest, Message
+from ai.runtime.util import GenerationGateBusyError, ProcessOutput, decode_runtime_message, drain_stderr, redacted, reap_process_group
+from ai.settings import RUNTIME_QUEUE_SIZE
+from ai.specs import GenerateRequest, Message, ProviderName
 
 
 @asynccontextmanager
@@ -120,6 +125,28 @@ class RuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
             codex_validate_model_page({"data": [{"model": "a"}]})
         with self.assertRaisesRegex(Exception, "malformed model cursor"):
             codex_validate_model_page({"data": [], "nextCursor": 123})
+
+    def test_decode_runtime_message_covers_malformed_json_invalid_utf8_and_non_dict(self):
+        make_error = runtime_error_factory(ProviderName.OPENAI_CODEX)
+        cases = {
+            "malformed JSON": (b"not-json", "codex runtime emitted malformed JSON"),
+            "invalid UTF-8": (b"\xff", "codex runtime emitted malformed JSON"),
+            "non-dict top level": (b"[1, 2, 3]", "codex runtime emitted a malformed message"),
+        }
+        for label, (line, expected_message) in cases.items():
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(ProviderRuntimeError, expected_message):
+                    decode_runtime_message(
+                        line,
+                        runtime_name="codex",
+                        non_dict_message="codex runtime emitted a malformed message",
+                        make_error=make_error,
+                    )
+
+        self.assertEqual(
+            decode_runtime_message(b'{"a": 1}', runtime_name="codex", non_dict_message="x", make_error=make_error),
+            {"a": 1},
+        )
 
     def test_codex_parse_turn_start(self):
         self.assertEqual(codex_parse_turn_start({"turn": {"id": "turn-1", "items": [], "status": "inProgress"}}), "turn-1")
@@ -311,18 +338,18 @@ class RuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
         queue = BoundedRuntimeQueue(maxsize=4, block_seconds=1)
         await queue.put({"method": "turn/completed", "params": {"threadId": "thread-1", "turn": {"id": "turn-1", "status": "completed"}}})
         with (
-            patch.object(app_server, "_request", new=AsyncMock(return_value={})),
+            patch.object(app_server, "call_runtime", new=AsyncMock(return_value={})),
             patch.object(app_server, "_terminate_runtime", new=AsyncMock()) as terminate,
         ):
             with self.assertRaisesRegex(Exception, "did not complete as interrupted"):
-                await app_server._interrupt("thread-1", "turn-1", queue)
+                await app_server._interrupt_turn("thread-1", "turn-1", queue)
             terminate.assert_awaited_once()
 
     async def test_codex_crash_reaches_a_full_inflight_queue(self):
         app_server = CodexAppServer()
         queue = BoundedRuntimeQueue(maxsize=1, block_seconds=1)
         await queue.put({"method": "old"})
-        app_server._turn_routes["turn-1"] = _TurnRoute(queue=queue)
+        app_server._router._turn_routes["turn-1"] = _TurnRoute(queue=queue)
         await app_server._crash(codex_event_error({"error": {"code": "quota_exhausted"}}))
         with self.assertRaises(Exception) as ctx:
             await queue.get(timeout=1)
@@ -332,7 +359,7 @@ class RuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
         app_server = CodexAppServer()
         request = GenerateRequest(system="system", messages=[Message(role="user", content="hello")], model="model-1", candidate_index=0)
 
-        async def request_rpc(method, params, *_args):
+        async def request_rpc(method, params, *_args, **_kwargs):
             if method == "account/read":
                 return {"account": {"type": "chatgpt"}}
             if method == "thread/start":
@@ -349,19 +376,19 @@ class RuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
             raise AssertionError(method)
 
         with (
-            patch.object(app_server, "_start", new=AsyncMock()),
-            patch.object(app_server, "_timed_request", side_effect=request_rpc),
-            patch.object(app_server, "_interrupt", new=AsyncMock()) as interrupt,
+            patch.object(app_server, "ensure_started", new=AsyncMock()),
+            patch.object(app_server, "rpc", side_effect=request_rpc),
+            patch.object(app_server, "_interrupt_turn", new=AsyncMock()) as interrupt,
             patch.object(app_server, "_schedule_thread_cleanup", new=Mock()),
         ):
             stream = app_server.stream(request)
             first = asyncio.create_task(anext(stream))
             for _ in range(100):
-                if "turn-1" in app_server._turn_routes:
+                if "turn-1" in app_server._router._turn_routes:
                     break
                 await asyncio.sleep(0)
-            self.assertIn("turn-1", app_server._turn_routes)
-            await app_server._turn_routes["turn-1"].queue.put({
+            self.assertIn("turn-1", app_server._router._turn_routes)
+            await app_server._router._turn_routes["turn-1"].queue.put({
                 "method": "item/agentMessage/delta",
                 "params": {"threadId": "thread-1", "turnId": "turn-1", "itemId": "item-1", "delta": "hi"},
             })
@@ -370,29 +397,25 @@ class RuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
             interrupt.assert_awaited_once()
 
     async def test_codex_tombstoned_turn_late_event_is_ignored_not_rebuffered(self):
+        # K1 이후 라우팅은 CodexTurnRouter가 전담하므로 reader/connection 없이 직접 검증한다.
         app_server = CodexAppServer()
-        app_server._turn_tombstones["turn-1"] = None
-        stdout = asyncio.StreamReader()
-        stdout.feed_data(
-            b'{"method":"item/agentMessage/delta","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"item-1","delta":"late"}}\n'
-        )
-        stdout.feed_eof()
-        process = Mock(pid=1, returncode=None, stdout=stdout)
-        # app_server._process는 None이라 process와 동일하지 않으므로 finally의
-        # "runtime exited unexpectedly" crash 경로는 타지 않는다 — 라우팅 분기만 검증.
-        await app_server._read_events(process)
-        self.assertNotIn("turn-1", app_server._early_turn_events)
-        self.assertNotIn("turn-1", app_server._turn_routes)
+        app_server._router._turn_tombstones["turn-1"] = None
+        await app_server._router.route_event({
+            "method": "item/agentMessage/delta",
+            "params": {"threadId": "thread-1", "turnId": "turn-1", "itemId": "item-1", "delta": "late"},
+        })
+        self.assertNotIn("turn-1", app_server._router._early_turn_events)
+        self.assertNotIn("turn-1", app_server._router._turn_routes)
 
     async def test_codex_early_buffered_events_preserve_order_after_route_creation(self):
         app_server = CodexAppServer()
         request = GenerateRequest(system="system", messages=[Message(role="user", content="hello")], model="model-1", candidate_index=0)
-        app_server._early_turn_events["turn-1"] = [
+        app_server._router._early_turn_events["turn-1"] = [
             {"method": "item/agentMessage/delta", "params": {"threadId": "thread-1", "turnId": "turn-1", "itemId": "item-1", "delta": "he"}},
             {"method": "item/agentMessage/delta", "params": {"threadId": "thread-1", "turnId": "turn-1", "itemId": "item-1", "delta": "llo"}},
         ]
 
-        async def request_rpc(method, params, *_args):
+        async def request_rpc(method, params, *_args, **_kwargs):
             if method == "account/read":
                 return {"account": {"type": "chatgpt"}}
             if method == "thread/start":
@@ -407,9 +430,9 @@ class RuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
             raise AssertionError(method)
 
         with (
-            patch.object(app_server, "_start", new=AsyncMock()),
-            patch.object(app_server, "_timed_request", side_effect=request_rpc),
-            patch.object(app_server, "_interrupt", new=AsyncMock()),
+            patch.object(app_server, "ensure_started", new=AsyncMock()),
+            patch.object(app_server, "rpc", side_effect=request_rpc),
+            patch.object(app_server, "_interrupt_turn", new=AsyncMock()),
             patch.object(app_server, "_schedule_thread_cleanup", new=Mock()),
         ):
             stream = app_server.stream(request)
@@ -422,7 +445,7 @@ class RuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
         app_server = CodexAppServer()
         request = GenerateRequest(system="system", messages=[Message(role="user", content="hello")], model="model-1", candidate_index=0)
 
-        async def request_rpc(method, params, *_args):
+        async def request_rpc(method, params, *_args, **_kwargs):
             if method == "thread/start":
                 return {
                     "thread": {"id": "thread-1", "ephemeral": False},
@@ -433,44 +456,56 @@ class RuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
             raise AssertionError(method)
 
         with (
-            patch.object(app_server, "_timed_request", side_effect=request_rpc),
+            patch.object(app_server, "rpc", side_effect=request_rpc),
             patch.object(app_server, "_schedule_thread_cleanup", new=Mock()) as cleanup,
         ):
             with self.assertRaisesRegex(ProviderRuntimeError, "isolated runtime policy"):
-                await app_server._open_secure_thread(request, lambda: 1.0)
+                await app_server._start_isolated_thread(request, time.monotonic() + 1.0)
         # ephemeral False => persisted True
         cleanup.assert_called_once_with("thread-1", True)
 
-    async def test_codex_terminal_seen_alone_does_not_remove_route(self):
+    async def test_codex_route_retirement_handles_either_completion_order(self):
         app_server = CodexAppServer()
-        queue = BoundedRuntimeQueue(maxsize=4, block_seconds=1)
-        route = _TurnRoute(queue=queue)
-        app_server._turn_routes["turn-1"] = route
 
-        route.terminal_seen = True
-        app_server._maybe_remove_route("turn-1")
-        self.assertIn("turn-1", app_server._turn_routes)
+        queue_a = BoundedRuntimeQueue(maxsize=4, block_seconds=1)
+        app_server._router._turn_routes["turn-a"] = _TurnRoute(queue=queue_a)
+        await app_server._router.route_event({"method": "turn/completed", "params": {"turnId": "turn-a"}})
+        self.assertIn("turn-a", app_server._router._turn_routes)
+        app_server._router.mark_consumer_finished("turn-a")
+        self.assertNotIn("turn-a", app_server._router._turn_routes)
+        self.assertIn("turn-a", app_server._router._turn_tombstones)
 
-        route.consumer_done = True
-        app_server._maybe_remove_route("turn-1")
-        self.assertNotIn("turn-1", app_server._turn_routes)
-        self.assertIn("turn-1", app_server._turn_tombstones)
+        queue_b = BoundedRuntimeQueue(maxsize=4, block_seconds=1)
+        app_server._router._turn_routes["turn-b"] = _TurnRoute(queue=queue_b)
+        app_server._router.mark_consumer_finished("turn-b")
+        self.assertIn("turn-b", app_server._router._turn_routes)
+        await app_server._router.route_event({"method": "turn/completed", "params": {"turnId": "turn-b"}})
+        self.assertNotIn("turn-b", app_server._router._turn_routes)
+        self.assertIn("turn-b", app_server._router._turn_tombstones)
 
     async def test_codex_overflow_on_one_turn_propagates_failure_to_other_turns(self):
         app_server = CodexAppServer()
         full_queue = BoundedRuntimeQueue(maxsize=1, block_seconds=1)
         await full_queue.put({"method": "old"})
         other_queue = BoundedRuntimeQueue(maxsize=4, block_seconds=1)
-        app_server._turn_routes["turn-1"] = _TurnRoute(queue=full_queue)
-        app_server._turn_routes["turn-2"] = _TurnRoute(queue=other_queue)
+        app_server._router._turn_routes["turn-1"] = _TurnRoute(queue=full_queue)
+        app_server._router._turn_routes["turn-2"] = _TurnRoute(queue=other_queue)
 
-        stdout = asyncio.StreamReader()
-        stdout.feed_data(
-            b'{"method":"item/agentMessage/delta","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"item-1","delta":"x"}}\n'
-        )
-        stdout.feed_eof()
-        process = Mock(pid=1, returncode=None, stdout=stdout)
-        await app_server._read_events(process)
+        # K2 이후 라우팅+승격은 _on_notification(facade)이 담당한다 — reader/connection 없이 직접 호출.
+        # _abort_connection의 identity guard(process/epoch)를 통과시키려면 현재 상태와 맞춰줘야 한다.
+        # _terminate_runtime은 mock한다 — F1 이후 이 경로가 실제 terminate를 fire-and-forget으로
+        # 예약하는데, mock pid=1로 진짜 reap_process_group을 태우면 os.killpg(1, ...)(=init)을
+        # 시도하게 된다.
+        process = Mock(pid=1, returncode=None)
+        app_server._process = process
+        app_server._current_epoch = 1
+        with patch.object(app_server, "_terminate_runtime", new=AsyncMock()):
+            keep_reading = await app_server._on_notification(process, 1, {
+                "method": "item/agentMessage/delta",
+                "params": {"threadId": "thread-1", "turnId": "turn-1", "itemId": "item-1", "delta": "x"},
+            })
+            await asyncio.sleep(0)
+        self.assertFalse(keep_reading)
 
         for queue in (full_queue, other_queue):
             with self.assertRaises(ProviderRuntimeError) as caught:
@@ -483,35 +518,32 @@ class RuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
         app_server = CodexAppServer()
         queue = BoundedRuntimeQueue(maxsize=4, block_seconds=1)
         await queue.put({"method": "pending-item"})
-        app_server._turn_routes["turn-1"] = _TurnRoute(queue=queue)
+        app_server._router._turn_routes["turn-1"] = _TurnRoute(queue=queue)
         error = codex_event_error({"error": {"code": "quota_exhausted"}})
         await app_server._crash(error)
         with self.assertRaises(Exception) as ctx:
             await queue.get(timeout=1)
         self.assertIs(ctx.exception, error)
-        self.assertNotIn("turn-1", app_server._turn_routes)
-        self.assertIn("turn-1", app_server._turn_tombstones)
+        self.assertNotIn("turn-1", app_server._router._turn_routes)
+        self.assertIn("turn-1", app_server._router._turn_tombstones)
 
     async def test_codex_late_routing_to_closed_queue_is_harmless(self):
         app_server = CodexAppServer()
         closed_queue = BoundedRuntimeQueue(maxsize=4, block_seconds=1)
         await closed_queue.close()
-        app_server._turn_routes["turn-1"] = _TurnRoute(queue=closed_queue, terminal_seen=True)
+        app_server._router._turn_routes["turn-1"] = _TurnRoute(queue=closed_queue, terminal_seen=True)
 
-        stdout = asyncio.StreamReader()
-        stdout.feed_data(
-            b'{"method":"item/agentMessage/delta","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"item-1","delta":"late"}}\n'
-        )
-        stdout.feed_eof()
-        process = Mock(pid=1, returncode=None, stdout=stdout)
-        await app_server._read_events(process)
+        await app_server._router.route_event({
+            "method": "item/agentMessage/delta",
+            "params": {"threadId": "thread-1", "turnId": "turn-1", "itemId": "item-1", "delta": "late"},
+        })
 
         self.assertIsNone(app_server._crash_error)
-        self.assertIn("turn-1", app_server._turn_routes)
+        self.assertIn("turn-1", app_server._router._turn_routes)
 
     @staticmethod
     def _codex_request_rpc_for_turn_1():
-        async def request_rpc(method, params, *_args):
+        async def request_rpc(method, params, *_args, **_kwargs):
             if method == "account/read":
                 return {"account": {"type": "chatgpt"}}
             if method == "thread/start":
@@ -531,18 +563,18 @@ class RuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
         request = GenerateRequest(system="system", messages=[Message(role="user", content="hello")], model="model-1", candidate_index=0)
 
         with (
-            patch.object(app_server, "_start", new=AsyncMock()),
-            patch.object(app_server, "_timed_request", side_effect=self._codex_request_rpc_for_turn_1()),
-            patch.object(app_server, "_request", new=AsyncMock(return_value={})),
+            patch.object(app_server, "ensure_started", new=AsyncMock()),
+            patch.object(app_server, "rpc", side_effect=self._codex_request_rpc_for_turn_1()),
+            patch.object(app_server, "call_runtime", new=AsyncMock(return_value={})),
             patch.object(app_server, "_schedule_thread_cleanup", new=Mock()),
         ):
             stream = app_server.stream(request)
             first = asyncio.create_task(anext(stream))
             for _ in range(100):
-                if "turn-1" in app_server._turn_routes:
+                if "turn-1" in app_server._router._turn_routes:
                     break
                 await asyncio.sleep(0)
-            route = app_server._turn_routes["turn-1"]
+            route = app_server._router._turn_routes["turn-1"]
             await route.queue.put({
                 "method": "item/agentMessage/delta",
                 "params": {"threadId": "thread-1", "turnId": "turn-1", "itemId": "item-1", "delta": "hi"},
@@ -563,29 +595,29 @@ class RuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
             await stream.aclose()
             await deliver_task
 
-            self.assertNotIn("turn-1", app_server._turn_routes)
-            self.assertIn("turn-1", app_server._turn_tombstones)
+            self.assertNotIn("turn-1", app_server._router._turn_routes)
+            self.assertIn("turn-1", app_server._router._turn_tombstones)
 
     async def test_codex_interrupt_grace_timeout_fails_all_inflight_routes(self):
         app_server = CodexAppServer()
         request = GenerateRequest(system="system", messages=[Message(role="user", content="hello")], model="model-1", candidate_index=0)
         other_queue = BoundedRuntimeQueue(maxsize=4, block_seconds=1)
-        app_server._turn_routes["turn-2"] = _TurnRoute(queue=other_queue)
+        app_server._router._turn_routes["turn-2"] = _TurnRoute(queue=other_queue)
 
         with (
-            patch.object(app_server, "_start", new=AsyncMock()),
-            patch.object(app_server, "_timed_request", side_effect=self._codex_request_rpc_for_turn_1()),
-            patch.object(app_server, "_request", new=AsyncMock(return_value={})),
+            patch.object(app_server, "ensure_started", new=AsyncMock()),
+            patch.object(app_server, "rpc", side_effect=self._codex_request_rpc_for_turn_1()),
+            patch.object(app_server, "call_runtime", new=AsyncMock(return_value={})),
             patch.object(app_server, "_schedule_thread_cleanup", new=Mock()),
-            patch("ai.runtime.codex_runtime.RUNTIME_INTERRUPT_GRACE_SECONDS", 0.02),
+            patch("ai.runtime.codex.runtime.RUNTIME_INTERRUPT_GRACE_SECONDS", 0.02),
         ):
             stream = app_server.stream(request)
             first = asyncio.create_task(anext(stream))
             for _ in range(100):
-                if "turn-1" in app_server._turn_routes:
+                if "turn-1" in app_server._router._turn_routes:
                     break
                 await asyncio.sleep(0)
-            route = app_server._turn_routes["turn-1"]
+            route = app_server._router._turn_routes["turn-1"]
             await route.queue.put({
                 "method": "item/agentMessage/delta",
                 "params": {"threadId": "thread-1", "turnId": "turn-1", "itemId": "item-1", "delta": "hi"},
@@ -604,17 +636,17 @@ class RuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
         request = GenerateRequest(system="system", messages=[Message(role="user", content="hello")], model="model-1", candidate_index=0)
 
         with (
-            patch.object(app_server, "_start", new=AsyncMock()),
-            patch.object(app_server, "_timed_request", side_effect=self._codex_request_rpc_for_turn_1()),
+            patch.object(app_server, "ensure_started", new=AsyncMock()),
+            patch.object(app_server, "rpc", side_effect=self._codex_request_rpc_for_turn_1()),
             patch.object(app_server, "_schedule_thread_cleanup", new=Mock()),
         ):
             stream = app_server.stream(request)
             first = asyncio.create_task(anext(stream))
             for _ in range(100):
-                if "turn-1" in app_server._turn_routes:
+                if "turn-1" in app_server._router._turn_routes:
                     break
                 await asyncio.sleep(0)
-            route = app_server._turn_routes["turn-1"]
+            route = app_server._router._turn_routes["turn-1"]
             await route.queue.put({
                 "method": "item/agentMessage/delta",
                 "params": {"threadId": "thread-1", "turnId": "turn-1", "itemId": "item-1", "delta": "hi"},
@@ -622,7 +654,7 @@ class RuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await first, "hi")
 
             # turn/completed 도착 전 — route는 아직 남아있어야 한다.
-            self.assertIn("turn-1", app_server._turn_routes)
+            self.assertIn("turn-1", app_server._router._turn_routes)
             self.assertFalse(route.terminal_seen)
             self.assertFalse(route.consumer_done)
 
@@ -637,8 +669,8 @@ class RuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(StopAsyncIteration):
                 await anext(stream)
 
-            self.assertNotIn("turn-1", app_server._turn_routes)
-            self.assertIn("turn-1", app_server._turn_tombstones)
+            self.assertNotIn("turn-1", app_server._router._turn_routes)
+            self.assertIn("turn-1", app_server._router._turn_tombstones)
 
     async def test_codex_auth_login_completed_hook_marks_connected_and_cancels_timeout(self):
         app_server = CodexAppServer()
@@ -647,7 +679,7 @@ class RuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
         async def sleep_forever():
             await asyncio.sleep(100)
 
-        session._login_state = {"status": "login_pending", "verificationUrl": "https://example.com", "userCode": "ABCD", "errorCode": None, "startedAt": 0.0, "loginId": "login-1"}
+        session._login_state = codex_auth._CodexLoginState(status="login_pending", verification_url="https://example.com", user_code="ABCD", started_at=0.0, login_id="login-1")
         session._login_timeout_task = asyncio.create_task(sleep_forever())
         await asyncio.sleep(0)
 
@@ -655,17 +687,365 @@ class RuntimeSafetyTests(unittest.IsolatedAsyncioTestCase):
         app_server._on_login_completed(True)
         await asyncio.sleep(0)
 
-        self.assertEqual(session.login_state()["status"], "connected")
+        self.assertEqual(session.get_login_state()["status"], "connected")
         self.assertTrue(session._login_timeout_task.cancelled())
 
     async def test_codex_auth_crash_hook_reverts_login_pending_to_error(self):
         app_server = CodexAppServer()
         session = CodexAuthSession(app_server)
-        session._login_state = {"status": "login_pending", "verificationUrl": "https://example.com", "userCode": "ABCD", "errorCode": None, "startedAt": 0.0, "loginId": "login-1"}
+        session._login_state = codex_auth._CodexLoginState(status="login_pending", verification_url="https://example.com", user_code="ABCD", started_at=0.0, login_id="login-1")
 
         app_server._on_crash(ProviderErrorCode.PROVIDER_RUNTIME_CRASHED)
 
-        self.assertEqual(session._login_state, {"status": "error", "verificationUrl": None, "userCode": None, "errorCode": ProviderErrorCode.PROVIDER_RUNTIME_CRASHED})
+        self.assertEqual(session._login_state, codex_auth._CodexLoginState(status="error", error_code=ProviderErrorCode.PROVIDER_RUNTIME_CRASHED))
+
+    async def test_codex_turn_router_attach_route_mark_consumer_finished_boundary(self):
+        router = CodexTurnRouter()
+        queue, overflow = await router.attach_turn("turn-1")
+        self.assertIsNone(overflow)
+
+        await router.route_event({
+            "method": "item/agentMessage/delta",
+            "params": {"threadId": "t", "turnId": "turn-1", "itemId": "i", "delta": "hi"},
+        })
+        self.assertEqual((await queue.get(timeout=1))["params"]["delta"], "hi")
+
+        await router.route_event({
+            "method": "turn/completed",
+            "params": {"turnId": "turn-1", "turn": {"id": "turn-1", "status": "completed"}},
+        })
+        self.assertIn("turn-1", router._turn_routes)
+
+        router.mark_consumer_finished("turn-1")
+        self.assertNotIn("turn-1", router._turn_routes)
+        self.assertIn("turn-1", router._turn_tombstones)
+
+    async def test_codex_turn_router_early_buffer_aggregate_overflow_contract(self):
+        router = CodexTurnRouter()
+        for i in range(RUNTIME_QUEUE_SIZE):
+            await router.route_event({
+                "method": "item/agentMessage/delta",
+                "params": {"threadId": "t", "turnId": f"turn-{i % 2}", "itemId": "i", "delta": "x"},
+            })
+        with self.assertRaises(ProviderRuntimeError) as caught:
+            await router.route_event({
+                "method": "item/agentMessage/delta",
+                "params": {"threadId": "t", "turnId": "turn-0", "itemId": "i", "delta": "x"},
+            })
+        self.assertEqual(caught.exception.code, ProviderErrorCode.PROVIDER_TIMEOUT)
+        self.assertTrue(caught.exception.retryable)
+        self.assertEqual(caught.exception.phase, "idle")
+
+    async def test_codex_turn_router_fail_all_boundary(self):
+        router = CodexTurnRouter()
+        queue_a, _ = await router.attach_turn("turn-a")
+        queue_b, _ = await router.attach_turn("turn-b")
+        error = codex_event_error({"error": {"code": "quota_exhausted"}})
+
+        await router.abort_all(error)
+
+        self.assertNotIn("turn-a", router._turn_routes)
+        self.assertNotIn("turn-b", router._turn_routes)
+        self.assertIn("turn-a", router._turn_tombstones)
+        self.assertIn("turn-b", router._turn_tombstones)
+        for queue in (queue_a, queue_b):
+            with self.assertRaises(Exception) as ctx:
+                await queue.get(timeout=1)
+            self.assertIs(ctx.exception, error)
+
+    async def test_codex_connection_concurrent_requests_match_correct_response(self):
+        connection = CodexRpcConnection()
+        written: list[bytes] = []
+
+        class FakeStdin:
+            def write(self, value): written.append(value)
+            async def drain(self): pass
+
+        stdout = asyncio.StreamReader()
+        process = Mock(pid=1, returncode=None, stdin=FakeStdin(), stdout=stdout)
+        connection.bind(process, AsyncMock(return_value=True), AsyncMock())
+
+        task_a = asyncio.create_task(connection.call("a/method", {}))
+        task_b = asyncio.create_task(connection.call("b/method", {}))
+        for _ in range(100):
+            if len(written) == 2:
+                break
+            await asyncio.sleep(0)
+        self.assertEqual(len(written), 2)
+        ids = [json.loads(payload)["id"] for payload in written]
+        self.assertNotEqual(ids[0], ids[1])
+
+        # 응답을 요청 순서와 반대로 흘려도 각 future가 자기 ID에 맞는 결과를 받아야 한다.
+        stdout.feed_data((json.dumps({"id": ids[1], "result": {"who": "b"}}) + "\n").encode())
+        stdout.feed_data((json.dumps({"id": ids[0], "result": {"who": "a"}}) + "\n").encode())
+
+        self.assertEqual(await task_a, {"who": "a"})
+        self.assertEqual(await task_b, {"who": "b"})
+
+    async def test_codex_connection_rebind_isolates_stale_reader(self):
+        connection = CodexRpcConnection()
+        process_a = Mock(pid=1, returncode=None, stdout=asyncio.StreamReader())
+        notifications: list[tuple[int, dict]] = []
+        failure_calls: list[tuple[int, ProviderRuntimeError]] = []
+
+        async def on_notification(_process, epoch, event):
+            notifications.append((epoch, event))
+            return True
+
+        async def on_failure(_process, epoch, error):
+            failure_calls.append((epoch, error))
+
+        epoch_a = connection.bind(process_a, on_notification, on_failure)
+        process_b = Mock(pid=2, returncode=None, stdout=asyncio.StreamReader())
+        epoch_b = connection.bind(process_b, on_notification, on_failure)
+        self.assertNotEqual(epoch_a, epoch_b)
+
+        # rebind 후 예전 reader(epoch_a)에 이벤트/EOF가 흘러도 현재 connection에는 무영향이어야 한다.
+        process_a.stdout.feed_data(b'{"method":"ignored","params":{}}\n')
+        process_a.stdout.feed_eof()
+        for _ in range(100):
+            await asyncio.sleep(0)
+
+        self.assertEqual(notifications, [])
+        self.assertEqual(failure_calls, [])
+        self.assertTrue(connection.is_bound)
+
+    async def test_codex_active_route_overflow_schedules_terminate(self):
+        # F1 회귀 테스트: 살아있는 route의 overflow도 early-buffer overflow와 마찬가지로
+        # crash뿐 아니라 해당 process의 terminate까지 예약해야 한다.
+        app_server = CodexAppServer()
+        full_queue = BoundedRuntimeQueue(maxsize=1, block_seconds=1)
+        await full_queue.put({"method": "old"})
+        app_server._router._turn_routes["turn-1"] = _TurnRoute(queue=full_queue)
+        process = Mock(pid=1, returncode=None)
+        app_server._process = process
+        app_server._current_epoch = 1
+
+        with patch.object(app_server, "_terminate_runtime", new=AsyncMock()) as terminate:
+            keep_reading = await app_server._on_notification(process, 1, {
+                "method": "item/agentMessage/delta",
+                "params": {"threadId": "t", "turnId": "turn-1", "itemId": "i", "delta": "x"},
+            })
+            await asyncio.sleep(0)
+
+        self.assertFalse(keep_reading)
+        self.assertIsNotNone(app_server._crash_error)
+        terminate.assert_awaited_once()
+        _, kwargs = terminate.call_args
+        self.assertIs(kwargs.get("target"), process)
+
+    async def test_codex_early_buffer_overflow_schedules_terminate(self):
+        # F1 회귀 테스트 — early-buffer 합산 overflow(router.route()의 elif 분기)도
+        # _on_notification을 거쳐 crash+terminate로 승격돼야 한다.
+        app_server = CodexAppServer()
+        process = Mock(pid=1, returncode=None)
+        app_server._process = process
+        app_server._current_epoch = 1
+        for i in range(RUNTIME_QUEUE_SIZE):
+            await app_server._router.route_event({
+                "method": "item/agentMessage/delta",
+                "params": {"threadId": "t", "turnId": f"turn-{i % 2}", "itemId": "i", "delta": "x"},
+            })
+
+        with patch.object(app_server, "_terminate_runtime", new=AsyncMock()) as terminate:
+            keep_reading = await app_server._on_notification(process, 1, {
+                "method": "item/agentMessage/delta",
+                "params": {"threadId": "t", "turnId": "turn-0", "itemId": "i", "delta": "x"},
+            })
+            await asyncio.sleep(0)
+
+        self.assertFalse(keep_reading)
+        self.assertIsNotNone(app_server._crash_error)
+        terminate.assert_awaited_once()
+
+    async def test_codex_abort_connection_ignores_stale_process_epoch(self):
+        # F3 회귀 테스트: stale (process, epoch)로 _abort_connection이 불려도 현재 runtime을
+        # crash/terminate하면 안 된다.
+        app_server = CodexAppServer()
+        current_process = Mock(pid=2, returncode=None)
+        app_server._process = current_process
+        app_server._current_epoch = 2
+        stale_process = Mock(pid=1, returncode=None)
+        error = codex_event_error({"error": {"code": "quota_exhausted"}})
+
+        with patch.object(app_server, "_terminate_runtime", new=AsyncMock()) as terminate:
+            # process도 epoch도 stale인 경우
+            await app_server._abort_connection(stale_process, 1, error)
+            self.assertIsNone(app_server._crash_error)
+            terminate.assert_not_called()
+
+            # process는 현재와 같지만 epoch만 stale인 경우
+            await app_server._abort_connection(current_process, 1, error)
+            self.assertIsNone(app_server._crash_error)
+            terminate.assert_not_called()
+
+    async def test_codex_crash_does_not_touch_already_done_futures(self):
+        app_server = CodexAppServer()
+        loop = asyncio.get_running_loop()
+        done_future = loop.create_future()
+        done_future.set_result({"ok": True})
+        app_server._connection._pending_requests[1] = done_future
+        # done future에 set_exception을 다시 호출하면 InvalidStateError가 난다 — crash가
+        # future.done() 체크를 지키는지 이 방식으로 검증한다.
+        await app_server._crash(codex_event_error({"error": {"code": "quota_exhausted"}}))
+        self.assertEqual(await done_future, {"ok": True})
+
+    async def test_codex_start_serializes_concurrent_callers_to_one_initialize(self):
+        app_server = CodexAppServer()
+        initialize_calls = 0
+
+        async def fake_timed_request(method, *_args, **_kwargs):
+            nonlocal initialize_calls
+            if method == "initialize":
+                initialize_calls += 1
+                await asyncio.sleep(0.01)
+            return {}
+
+        process = Mock(pid=1, returncode=None, stdout=asyncio.StreamReader(), stderr=asyncio.StreamReader())
+        with (
+            patch("ai.runtime.codex.runtime.asyncio.create_subprocess_exec", new=AsyncMock(return_value=process)),
+            patch.object(app_server, "_preflight", new=AsyncMock(return_value="codex-cli 0.0.0")),
+            patch.object(app_server, "rpc", side_effect=fake_timed_request),
+            patch.object(app_server, "call_runtime", new=AsyncMock(return_value={})),
+        ):
+            await asyncio.gather(app_server.ensure_started(), app_server.ensure_started(), app_server.ensure_started())
+        self.assertEqual(initialize_calls, 1)
+
+    async def test_codex_start_waits_out_restart_backoff_after_a_crash(self):
+        app_server = CodexAppServer()
+        app_server._last_crash_at = time.monotonic()
+        process = Mock(pid=1, returncode=None, stdout=asyncio.StreamReader(), stderr=asyncio.StreamReader())
+        with (
+            patch("ai.runtime.codex.runtime.asyncio.create_subprocess_exec", new=AsyncMock(return_value=process)),
+            patch.object(app_server, "_preflight", new=AsyncMock(return_value="codex-cli 0.0.0")),
+            patch.object(app_server, "rpc", new=AsyncMock(return_value={})),
+            patch.object(app_server, "call_runtime", new=AsyncMock(return_value={})),
+            patch("ai.runtime.codex.runtime.RUNTIME_RESTART_BACKOFF_SECONDS", 0.05),
+            patch("ai.runtime.codex.runtime.asyncio.sleep", new=AsyncMock()) as sleep,
+        ):
+            await app_server.ensure_started()
+        self.assertTrue(sleep.await_args_list)
+        self.assertGreater(sleep.await_args_list[0].args[0], 0)
+
+    async def test_codex_try_cleanup_request_returns_result_on_success(self):
+        app_server = CodexAppServer()
+        with patch.object(app_server, "call_runtime", new=AsyncMock(return_value={"ok": True})):
+            result = await app_server._try_cleanup_request("thread/list", {})
+        self.assertEqual(result, {"ok": True})
+
+    async def test_codex_try_cleanup_request_logs_warning_and_returns_none_on_failure(self):
+        app_server = CodexAppServer()
+        with (
+            patch.object(app_server, "call_runtime", new=AsyncMock(side_effect=RuntimeError("boom"))),
+            self.assertLogs("ai.runtime.codex.runtime", level="WARNING") as captured,
+        ):
+            result = await app_server._try_cleanup_request("thread/list", {}, warning="cleanup failed")
+        self.assertIsNone(result)
+        self.assertIn("cleanup failed", captured.output[0])
+
+    async def test_codex_try_cleanup_request_fails_silently_without_warning(self):
+        app_server = CodexAppServer()
+        with (
+            patch.object(app_server, "call_runtime", new=AsyncMock(side_effect=RuntimeError("boom"))),
+            self.assertNoLogs("ai.runtime.codex.runtime", level="WARNING"),
+        ):
+            result = await app_server._try_cleanup_request("thread/unsubscribe", {})
+        self.assertIsNone(result)
+
+    async def test_codex_try_cleanup_request_propagates_cancellation(self):
+        app_server = CodexAppServer()
+        with patch.object(app_server, "call_runtime", new=AsyncMock(side_effect=asyncio.CancelledError())):
+            with self.assertRaises(asyncio.CancelledError):
+                await app_server._try_cleanup_request("thread/list", {}, warning="cleanup failed")
+
+    async def test_codex_persisted_thread_cleanup_paginates_and_continues_past_delete_failure(self):
+        app_server = CodexAppServer()
+        process = Mock(pid=1, returncode=None, stdout=asyncio.StreamReader(), stderr=asyncio.StreamReader())
+        deleted_thread_ids = []
+
+        async def fake_raw_request(method, params):
+            if method == "thread/list" and not params.get("cursor"):
+                return {"data": [{"id": "thread-1", "ephemeral": False}], "nextCursor": "page-2"}
+            if method == "thread/list" and params.get("cursor") == "page-2":
+                return {"data": [{"id": "thread-2", "ephemeral": False}], "nextCursor": None}
+            if method == "thread/delete" and params.get("threadId") == "thread-1":
+                raise RuntimeError("delete failed")
+            if method == "thread/delete" and params.get("threadId") == "thread-2":
+                deleted_thread_ids.append(params["threadId"])
+                return {}
+            raise AssertionError((method, params))
+
+        with (
+            patch("ai.runtime.codex.runtime.asyncio.create_subprocess_exec", new=AsyncMock(return_value=process)),
+            patch.object(app_server, "_preflight", new=AsyncMock(return_value="codex-cli 0.0.0")),
+            patch.object(app_server, "rpc", new=AsyncMock(return_value={})),
+            patch.object(app_server, "call_runtime", new=AsyncMock(side_effect=fake_raw_request)),
+            self.assertLogs("ai.runtime.codex.runtime", level="WARNING") as captured,
+        ):
+            await app_server.ensure_started()
+        self.assertEqual(deleted_thread_ids, ["thread-2"])
+        self.assertIn("Codex persisted thread cleanup failed", captured.output[0])
+
+    async def test_codex_persisted_thread_cleanup_tolerates_thread_list_failure(self):
+        app_server = CodexAppServer()
+        process = Mock(pid=1, returncode=None, stdout=asyncio.StreamReader(), stderr=asyncio.StreamReader())
+
+        async def fake_raw_request(method, params):
+            if method == "thread/list":
+                raise RuntimeError("list failed")
+            raise AssertionError((method, params))
+
+        with (
+            patch("ai.runtime.codex.runtime.asyncio.create_subprocess_exec", new=AsyncMock(return_value=process)),
+            patch.object(app_server, "_preflight", new=AsyncMock(return_value="codex-cli 0.0.0")),
+            patch.object(app_server, "rpc", new=AsyncMock(return_value={})),
+            patch.object(app_server, "call_runtime", new=AsyncMock(side_effect=fake_raw_request)),
+            self.assertLogs("ai.runtime.codex.runtime", level="WARNING") as captured,
+        ):
+            await app_server.ensure_started()
+        self.assertEqual(len(captured.output), 1)
+        self.assertIn("Codex startup thread cleanup failed", captured.output[0])
+
+    async def test_codex_schedule_thread_cleanup_ignores_unsubscribe_and_delete_failures(self):
+        app_server = CodexAppServer()
+        with patch.object(app_server, "call_runtime", new=AsyncMock(side_effect=RuntimeError("boom"))):
+            app_server._schedule_thread_cleanup("thread-1", True)
+            tasks = tuple(app_server._cleanup_tasks)
+            self.assertEqual(len(tasks), 1)
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def test_codex_cancelled_request_ignores_its_late_response_once(self):
+        app_server = CodexAppServer()
+
+        class FakeStdin:
+            def write(self, _value): pass
+            async def drain(self):
+                raise asyncio.CancelledError()
+
+        process = Mock(pid=1, returncode=None, stdin=FakeStdin())
+        app_server._connection._process = process
+        app_server._connection._epoch = 1
+        with self.assertRaises(asyncio.CancelledError):
+            await app_server.call_runtime("some/method", {})
+        self.assertIn(1, app_server._connection._ignored_response_ids)
+
+        # 같은 connection(process, epoch)에서 late response가 도착하는 상황을 흉내낸다.
+        # EOF를 주지 않아 finally의 crash 경로는 타지 않는다 — 늦은 response 무시만 검증.
+        stdout = asyncio.StreamReader()
+        stdout.feed_data(b'{"id":1,"result":{}}\n')
+        process.stdout = stdout
+        reader_task = asyncio.create_task(app_server._connection._read_events(process, 1))
+        try:
+            for _ in range(100):
+                if 1 not in app_server._connection._ignored_response_ids:
+                    break
+                await asyncio.sleep(0)
+            self.assertNotIn(1, app_server._connection._ignored_response_ids)
+            self.assertIsNone(app_server._crash_error)
+        finally:
+            reader_task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await reader_task
 
     async def test_claude_generator_close_reaps_the_process_group(self):
         runtime = ClaudeCliRuntime()

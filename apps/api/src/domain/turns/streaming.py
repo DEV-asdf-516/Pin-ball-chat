@@ -3,7 +3,7 @@ import json
 import logging
 from typing import AsyncIterator, Callable
 
-from ai.errors import EmptyOutputError, ProviderBadGatewayError, ProviderErrorCode, ProviderRuntimeError, ProviderTimeoutError
+from ai.errors import EmptyOutputError, ProviderBadGatewayError, ProviderErrorCode, ProviderRuntimeError, ProviderTimeoutError, provider_error_payload
 from ai.registry import resolve_provider, stream_text
 from ai.specs import GenerateRequest
 from ai.settings import SSE_HEARTBEAT_SECONDS
@@ -88,22 +88,16 @@ async def stream_response(prepared: PreparedGeneration, params: GenerationParams
         raise
     except ProviderTimeoutError as exc:
         if not terminal_sent:
-            payload = {"error": ProviderErrorCode.PROVIDER_TIMEOUT, "code": ProviderErrorCode.PROVIDER_TIMEOUT, "provider": exc.provider or provider_name, "message": str(exc), "retryable": True}
-            if exc.phase:
-                payload["phase"] = exc.phase
             terminal_sent = True
-            yield sse("error", payload)
+            yield sse("error", provider_error_payload(exc, fallback_provider=provider_name))
     except ProviderRuntimeError as exc:
         if not terminal_sent:
-            payload = {"error": exc.code, "code": exc.code, "provider": exc.provider, "message": str(exc), "retryable": exc.retryable}
-            if exc.phase:
-                payload["phase"] = exc.phase
             terminal_sent = True
-            yield sse("error", payload)
+            yield sse("error", provider_error_payload(exc, fallback_provider=provider_name))
     except ProviderBadGatewayError as exc:
         if not terminal_sent:
             terminal_sent = True
-            yield sse("error", {"error": ProviderErrorCode.PROVIDER_BAD_GATEWAY, "code": ProviderErrorCode.PROVIDER_BAD_GATEWAY, "provider": exc.provider or provider_name, "message": str(exc), "retryable": True})
+            yield sse("error", provider_error_payload(exc, fallback_provider=provider_name))
     except EmptyOutputError as exc:
         if not terminal_sent:
             terminal_sent = True

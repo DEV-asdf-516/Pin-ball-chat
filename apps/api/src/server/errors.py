@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from ai.errors import EmptyOutputError, ProviderBadGatewayError, ProviderErrorCode, ProviderRuntimeError, ProviderTimeoutError
+from ai.errors import EmptyOutputError, ProviderBadGatewayError, ProviderErrorCode, ProviderRuntimeError, ProviderTimeoutError, provider_error_payload
 from core.errors import BadRequest, Conflict, NotFound
 
 log = logging.getLogger(__name__)
@@ -29,27 +29,15 @@ def _simple_handler(status_code: int, error_code: str):
 def register_error_handlers(app: FastAPI):
     @app.exception_handler(ProviderTimeoutError)
     async def provider_timeout(_request: Request, exc: ProviderTimeoutError):
-        body : dict[str,str] = {
-            "error": ProviderErrorCode.PROVIDER_TIMEOUT,
-            "code": ProviderErrorCode.PROVIDER_TIMEOUT,
-            "provider": exc.provider,
-            "message": str(exc),
-            "retryable": True
-            }
-        if exc.phase:
-            body["phase"] = exc.phase
-        return JSONResponse(status_code=504, content=body)
+        return JSONResponse(status_code=504, content=provider_error_payload(exc))
 
     @app.exception_handler(ProviderBadGatewayError)
     async def provider_bad_gateway(_request: Request, exc: ProviderBadGatewayError):
-        return JSONResponse(status_code=502, content={"error": ProviderErrorCode.PROVIDER_BAD_GATEWAY, "code": ProviderErrorCode.PROVIDER_BAD_GATEWAY, "provider": exc.provider, "message": str(exc), "retryable": True})
+        return JSONResponse(status_code=502, content=provider_error_payload(exc))
 
     @app.exception_handler(ProviderRuntimeError)
     async def provider_runtime_error(_request: Request, exc: ProviderRuntimeError):
-        body : dict[str,str] = {"error": exc.code, "code": exc.code, "provider": exc.provider, "message": str(exc), "retryable": exc.retryable}
-        if exc.phase:
-            body["phase"] = exc.phase
-        return JSONResponse(status_code=502, content=body)
+        return JSONResponse(status_code=502, content=provider_error_payload(exc))
 
     @app.exception_handler(HTTPException)
     async def http_error(_request: Request, exc: HTTPException):

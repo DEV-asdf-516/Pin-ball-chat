@@ -1,7 +1,7 @@
 import asyncio
 
 from core.errors import Conflict
-from ai.errors import ProviderConnectionBusyError, ProviderErrorCode, ProviderRuntimeError, ProviderTimeoutError
+from ai.errors import ProviderConnectionBusyError, ProviderErrorCode, provider_failure_code
 from ai.providers.base import AIProvider, LoginCapableProvider
 from ai.registry import get_provider, list_provider_models
 from ai.specs import ProviderConnection, ProviderName
@@ -49,27 +49,15 @@ async def check_provider_connection(provider: str) -> dict:
     try:
         await list_provider_models(provider)
         return {
-            "ok": True, 
-            "provider": provider, 
+            "ok": True,
+            "provider": provider,
             "code": None
         }
-    except ProviderTimeoutError:
+    except Exception as exc:
         return {
-            "ok": False, 
-            "provider": provider, 
-            "code": ProviderErrorCode.PROVIDER_TIMEOUT
-        }
-    except ProviderRuntimeError as exc:
-        return {
-            "ok": False, 
-            "provider": provider, 
-            "code": exc.code
-        }
-    except Exception:
-        return {
-            "ok": False, 
-            "provider": provider, 
-            "code": ProviderErrorCode.PROVIDER_BAD_GATEWAY
+            "ok": False,
+            "provider": provider,
+            "code": provider_failure_code(exc)
         }
 
 

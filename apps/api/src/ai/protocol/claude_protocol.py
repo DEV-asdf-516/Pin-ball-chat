@@ -4,16 +4,26 @@ from typing import Callable, NamedTuple
 
 from ai.errors import ErrorRule, ProviderErrorCode, ProviderRuntimeError, match_error_rule, runtime_error_factory
 from ai.specs import ProviderName
-from util.safe_util import get_safe_str
+from util.safe_util import get_safe_dict, get_safe_str, has_str_field
 
 
 _runtime_error : Callable[..., ProviderRuntimeError] = runtime_error_factory(ProviderName.CLAUDE_CLI)
 
 
 _EVENT_ERROR_RULES: list[ErrorRule] = [
-    ErrorRule({"authentication_error", "authentication_failed", "auth_required", "invalid_api_key", "unauthorized", "permission_error"}, ProviderErrorCode.PROVIDER_AUTH_REQUIRED, "Claude login is required"),
-    ErrorRule({"rate_limit", "rate_limit_error", "quota_exhausted", "usage_limit", "usage_limit_reached", "credit_balance_too_low", "billing_error", "error_max_budget_usd"}, ProviderErrorCode.PROVIDER_QUOTA_EXHAUSTED, "Claude usage limit has been reached", retryable=True),
-    ErrorRule({"not_found_error", "model_not_found", "model_unavailable", "model_access_denied"}, ProviderErrorCode.MODEL_UNAVAILABLE, "the selected Claude model is unavailable"),
+    ErrorRule({"authentication_error", "authentication_failed", "auth_required", "invalid_api_key", "unauthorized", "permission_error"}, 
+        ProviderErrorCode.PROVIDER_AUTH_REQUIRED, 
+        "Claude login is required"
+    ),
+    ErrorRule({"rate_limit", "rate_limit_error", "quota_exhausted", "usage_limit", "usage_limit_reached", "credit_balance_too_low", "billing_error", "error_max_budget_usd"}, 
+        ProviderErrorCode.PROVIDER_QUOTA_EXHAUSTED, 
+        "Claude usage limit has been reached", 
+        retryable=True
+    ),
+    ErrorRule({"not_found_error", "model_not_found", "model_unavailable", "model_access_denied"}, 
+        ProviderErrorCode.MODEL_UNAVAILABLE, 
+        "the selected Claude model is unavailable"
+    ),
 ]
 
 
@@ -31,10 +41,10 @@ class _EventStructureCheck(NamedTuple):
 
 # 위에서 아래로 첫 매치가 이긴다 — 현행 if-체인의 검사 순서와 동일해야 한다.
 _EVENT_STRUCTURE_CHECKS: list[_EventStructureCheck] = [
-    _EventStructureCheck(lambda e: not isinstance(e.get("type"), str), "claude runtime emitted a malformed stream event"),
+    _EventStructureCheck(lambda e: not has_str_field(e, "type"), "claude runtime emitted a malformed stream event"),
     _EventStructureCheck(
         lambda e: e.get("type") == "stream_event" \
-            and (not isinstance(e.get("event"), dict) or not isinstance(e["event"].get("type"), str)),
+            and (not isinstance(e.get("event"), dict) or not has_str_field(e["event"], "type")),
         "claude runtime emitted a malformed nested stream event",
     ),
     _EventStructureCheck(
@@ -69,7 +79,7 @@ def _classify_event_error(event: dict) -> ProviderRuntimeError | None:
     stream_event: dict = _unwrap_stream_event(event)
     raw_error = stream_event.get("error")
 
-    error: dict = raw_error if isinstance(raw_error, dict) else {}
+    error: dict = get_safe_dict(stream_event, "error")
     event_type: str = get_safe_str(stream_event, "type")
 
     is_error_result: bool = event.get("type") == "result" and event.get("is_error") is True
@@ -109,12 +119,10 @@ def _extract_text_delta(event: dict) -> str:
     if delta.get("type") != "text_delta":
         return ""
 
-    text : str = delta.get("text")
-
-    if not isinstance(text, str):
+    if not has_str_field(delta, "text"):
         raise _runtime_error(ProviderErrorCode.PROVIDER_RUNTIME_INCOMPATIBLE, "claude runtime emitted a malformed text delta")
 
-    return text
+    return delta.get("text")
 
 
 
@@ -124,15 +132,13 @@ def _contains_prohibited_tool_use(event: dict) -> bool:
     if stream_event.get("type") in {"tool_use", "tool_result", "tool", "tool_progress"}:
         return True
 
-    if stream_event.get("type") == "content_block_start":
-        block: dict = stream_event.get("content_block")
+    if (
+        stream_event.get("type") == "content_block_start"
+        and get_safe_dict(stream_event, "content_block").get("type") in {"tool_use", "server_tool_use"}
+    ):
+        return True
 
-        if isinstance(block, dict) and block.get("type") in {"tool_use", "server_tool_use"}:
-            return True
-
-    message = event.get("message")
-
-    content: list = message.get("content", []) if isinstance(message, dict) else []
+    content: list = get_safe_dict(event, "message").get("content", [])
 
     part_types: set = {part.get("type") for part in content if isinstance(part, dict)}
 
@@ -141,11 +147,12 @@ def _contains_prohibited_tool_use(event: dict) -> bool:
 
 
 def _parse_result_event(event: dict) -> tuple[str, dict[str, int]]:
-    result = event.get("result")
     raw_usage = event.get("usage")
 
-    if not isinstance(result, str) or not isinstance(raw_usage, dict):
+    if not has_str_field(event, "result") or not isinstance(raw_usage, dict):
         raise _runtime_error(ProviderErrorCode.PROVIDER_RUNTIME_INCOMPATIBLE, "claude runtime emitted a malformed result event")
+
+    result = event.get("result")
 
     usage: dict[str, int] = {}
 
@@ -173,7 +180,7 @@ class ClaudeTurnPhase(Enum):
 
 class ClaudeTurnStateMachine:
     # phase 전이: AWAITING_INIT --init--> STREAMING --result--> FINISHED
-    #             AWAITING_INIT --result--> FINISHED_WITHOUT_INIT
+    #            AWAITING_INIT --result--> FINISHED_WITHOUT_INIT
     # 불변식: phase가 FINISHED 또는 FINISHED_WITHOUT_INIT ⇒ result_text/result_usage is not None
     def __init__(self, scratch: Path):
         self._scratch = scratch
@@ -206,7 +213,7 @@ class ClaudeTurnStateMachine:
             if self.phase == ClaudeTurnPhase.STREAMING:
                 raise _runtime_error(ProviderErrorCode.PROVIDER_RUNTIME_INCOMPATIBLE, "claude runtime emitted duplicate initialization")
 
-            event_cwd: Path | None = Path(event.get("cwd")) if isinstance(event.get("cwd"), str) else None
+            event_cwd: Path | None = Path(event.get("cwd")) if has_str_field(event, "cwd") else None
 
             cwd_isolated: bool = event_cwd is not None and event_cwd.resolve() == self._scratch.resolve()
             tools_disabled: bool = event.get("tools") == [] and event.get("mcp_servers") == []
@@ -217,7 +224,7 @@ class ClaudeTurnStateMachine:
             self.phase = ClaudeTurnPhase.STREAMING
 
         if event_type == "result":
-            malformed_result: bool = not isinstance(event_subtype, str) or not isinstance(event.get("is_error"), bool)
+            malformed_result: bool = not has_str_field(event, "subtype") or not isinstance(event.get("is_error"), bool)
 
             if malformed_result:
                 raise _runtime_error(ProviderErrorCode.PROVIDER_RUNTIME_INCOMPATIBLE, "claude runtime emitted a malformed result event")
