@@ -22,8 +22,8 @@ export const state = {
   composerHeight: null,
   composerMaxHeight: 136,
   settings: {
-    provider: "local-stub",
-    model: "local-stub",
+    provider: "ollama",
+    model: "",
     numPredict: 1500,
     numCtx: 8192,
     compactPrompt: true,

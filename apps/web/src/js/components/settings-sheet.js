@@ -27,11 +27,9 @@ export function settingsSheet() {
         el("h2", { text: "대화별 모델 설정" }),
         el("div", { className: "row" }, [
           field("providerSelectButton", "AI 제공자", select("providerSelect", [
-            ["local-stub", "로컬 테스트"],
             ["ollama", "Ollama"],
             ["openai-codex", "Codex"],
             ["claude-cli", "Claude Code"],
-            ["gemini", "Gemini"],
           ])),
           field("modelSelectButton", "모델", select("modelSelect", [])),
         ]),

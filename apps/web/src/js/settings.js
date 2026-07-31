@@ -15,8 +15,8 @@ const providerGenerationDefaults = {
   gemini: { numPredict: 8192, numCtx: 65536 },
 };
 const defaultGenerationSettings = {
-  provider: "local-stub",
-  model: "local-stub",
+  provider: "ollama",
+  model: "",
   numPredict: DEFAULT_NUM_PREDICT,
   numCtx: DEFAULT_NUM_CTX,
   compactPrompt: true,
@@ -80,6 +80,8 @@ export async function loadConversationSettings() {
     const settings = await api(`/api/conversations/${conv.id}/settings`);
     if (loadVersion !== conversationSettingsVersion || activeConversation()?.id !== conv.id) return;
     if (!settings) {
+      await selectDefaultModel();
+      if (loadVersion !== conversationSettingsVersion || activeConversation()?.id !== conv.id) return;
       syncSettingsForm();
       return;
     }
@@ -90,6 +92,8 @@ export async function loadConversationSettings() {
     state.settings.numCtx = settings.num_ctx || defaults.numCtx;
     state.settings.compactPrompt = settings.compact_prompt ?? state.settings.compactPrompt;
     state.settings.adapterId = settings.adapter_id || "";
+    await selectDefaultModel();
+    if (loadVersion !== conversationSettingsVersion || activeConversation()?.id !== conv.id) return;
     syncSettingsForm();
   } catch {
     if (loadVersion !== conversationSettingsVersion || activeConversation()?.id !== conv.id) return;
@@ -121,7 +125,13 @@ function fallbackModels(provider) {
 }
 
 function generationDefaults(provider) {
-  return providerGenerationDefaults[provider] || providerGenerationDefaults["local-stub"];
+  return providerGenerationDefaults[provider] || providerGenerationDefaults.ollama;
+}
+
+async function selectDefaultModel() {
+  if (state.settings.model) return;
+  const models = await providerModels(state.settings.provider);
+  if (models.length) state.settings.model = models[0];
 }
 
 function renderModelOptions(models = fallbackModels(state.settings.provider), preferFirst = false) {
@@ -285,7 +295,7 @@ async function openProviderConnections() {
     const data = await api("/api/provider-connections");
     if (viewVersion !== providerViewVersion || activeProviderSettings !== null || !$("providerSettingsSheet").classList.contains("open")) return;
     const providers = (Array.isArray(data?.providers) ? data.providers : [])
-      .filter((connection) => !["openai", "anthropic"].includes(connection.provider));
+      .filter((connection) => !["openai", "anthropic", "gemini"].includes(connection.provider));
     setChildren(root, providers.map(providerConnectionRow));
   } catch {
     if (viewVersion !== providerViewVersion || activeProviderSettings !== null || !$("providerSettingsSheet").classList.contains("open")) return;
