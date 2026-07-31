@@ -48,8 +48,6 @@ class ClaudeCliProvider(LoginCapableProvider):
         return await claude_auth.session.submit_login_code(code)
 
     async def logout(self) -> None:
-        if runtime.has_active_generations:
-            raise ProviderConnectionBusyError("cannot log out while a Claude generation is running")
         try:
             await claude_auth.session.logout()
         except claude_auth.ClaudeGenerationActiveError as exc:

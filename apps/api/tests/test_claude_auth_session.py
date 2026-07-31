@@ -226,6 +226,56 @@ class ClaudeAuthSessionTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ClaudeGenerationActiveError):
             await session.logout()
 
+    async def test_logout_is_rejected_while_a_real_generation_is_running(self):
+        gate = GenerationGate(limit=1)
+        mocked_runtime = Mock(has_active_generations=False)
+        mocked_runtime.auth_change_guard = gate.try_exclusive
+        session = claude_auth._ClaudeAuthSession(mocked_runtime)
+
+        async def fake_generation() -> None:
+            async with gate.acquire():
+                await asyncio.sleep(0.05)
+
+        generation_task = asyncio.create_task(fake_generation())
+        await asyncio.sleep(0)
+
+        with self.assertRaises(ClaudeGenerationActiveError):
+            await session.logout()
+
+        await generation_task
+
+    async def test_generation_waits_for_an_in_progress_logout(self):
+        gate = GenerationGate(limit=1)
+        mocked_runtime = Mock(has_active_generations=False)
+        mocked_runtime.auth_change_guard = gate.try_exclusive
+        session = claude_auth._ClaudeAuthSession(mocked_runtime)
+
+        release_logout = asyncio.Event()
+
+        async def slow_logout_command(*args, **kwargs) -> tuple[int, str]:
+            await release_logout.wait()
+            return (0, "")
+
+        generation_acquired = asyncio.Event()
+
+        async def fake_generation() -> None:
+            async with gate.acquire():
+                generation_acquired.set()
+
+        with patch("ai.auth.claude_auth._run_auth_command", new=AsyncMock(side_effect=slow_logout_command)):
+            logout_task = asyncio.create_task(session.logout())
+            await asyncio.sleep(0)
+
+            generation_task = asyncio.create_task(fake_generation())
+            await asyncio.sleep(0.01)
+            self.assertFalse(generation_acquired.is_set())
+
+            release_logout.set()
+            await logout_task
+            await generation_task
+
+        self.assertTrue(generation_acquired.is_set())
+
     async def test_try_exclusive_fails_immediately_when_generation_is_active(self):
         gate = GenerationGate(limit=1)
 
