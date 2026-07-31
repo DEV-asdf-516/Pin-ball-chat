@@ -51,7 +51,8 @@ def export_application_rows(conn: sqlite3.Connection, dataset_format: str) -> li
                             ROW_NUMBER() OVER (PARTITION BY generation_id ORDER BY created_at DESC, id DESC) AS rn
                     FROM generation_edits
                 ) e
-                JOIN generations g ON g.id = e.generation_id
+                JOIN generations g 
+                ON g.id = e.generation_id
                 WHERE e.rn = 1
                 AND g.prompt_messages_json IS NOT NULL
             """),
