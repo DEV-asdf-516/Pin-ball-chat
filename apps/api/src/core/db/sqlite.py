@@ -34,3 +34,15 @@ def connect(db_path: str | Path = DB_PATH) -> sqlite3.Connection:
 
 def init_db(conn: sqlite3.Connection) -> None:
     dbkit.init_db(conn, SCHEMA_DDL, TABLE_NAMES)
+    _migrate_prompt_messages_json(conn)
+
+
+def _migrate_prompt_messages_json(conn: sqlite3.Connection) -> None:
+    # CREATE TABLE IF NOT EXISTS는 이미 존재하는 generations 테이블에 새 컬럼을 추가해주지 않으므로,
+    # 기존 SQLite DB엔 여기서 직접 ALTER TABLE로 채워 넣는다.
+    columns: set[str] = {row["name"] for row in conn.execute("PRAGMA table_info(generations)")}
+    if "prompt_messages_json" in columns:
+        return
+    conn.execute("ALTER TABLE generations ADD COLUMN prompt_messages_json TEXT")
+    conn.commit()
+    dbkit.init_db(conn, SCHEMA_DDL, ["generations"])

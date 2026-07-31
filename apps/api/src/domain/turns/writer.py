@@ -58,6 +58,10 @@ def record_generation_output(
     msg_id: str = new_id("msg")
     ts: str = utc_now_string()
     snapshot: str = snapshot_text(built.system, built.messages)
+    prompt_messages: dict = {
+        "system": built.system,
+        "messages": [{"role": message.role, "content": message.content} for message in built.messages],
+    }
     stored_params: dict = {
         "warnings": built.warnings,
         "compactPrompt": params.compact_prompt,
@@ -76,6 +80,7 @@ def record_generation_output(
         "candidate_index": candidate_index,
         "prompt_snapshot": snapshot,
         "prompt_hash": hashlib.sha256(snapshot.encode()).hexdigest(),
+        "prompt_messages_json": json.dumps(prompt_messages, ensure_ascii=False),
         "output_text": output,
         "params_json": json.dumps(stored_params, ensure_ascii=False),
         "output_token_count": len(output.split()),

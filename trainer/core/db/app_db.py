@@ -43,14 +43,16 @@ def export_application_rows(conn: sqlite3.Connection, dataset_format: str) -> li
                 SELECT
                     e.edited_text,
                     g.prompt_messages_json
-                FROM generation_edits e
+                FROM (
+                    SELECT 
+                            id, 
+                            generation_id, 
+                            edited_text,
+                            ROW_NUMBER() OVER (PARTITION BY generation_id ORDER BY created_at DESC, id DESC) AS rn
+                    FROM generation_edits
+                ) e
                 JOIN generations g ON g.id = e.generation_id
-                WHERE e.id = (
-                    SELECT e2.id FROM generation_edits e2
-                    WHERE e2.generation_id = e.generation_id
-                    ORDER BY e2.created_at DESC, e2.id DESC
-                    LIMIT 1
-                )
+                WHERE e.rn = 1
                 AND g.prompt_messages_json IS NOT NULL
             """),
         )

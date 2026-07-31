@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS generations (
   candidate_index INTEGER NOT NULL,
   prompt_snapshot TEXT NOT NULL,
   prompt_hash TEXT NOT NULL,
+  prompt_messages_json TEXT,
   output_text TEXT NOT NULL,
   params_json TEXT NOT NULL,
   output_token_count INTEGER,
@@ -144,4 +145,7 @@ CREATE INDEX IF NOT EXISTS idx_generations_user_profile ON generations(user_prof
 
 -- trainer chat export의 generation별 최신 edit 선택 (correlated subquery)
 CREATE INDEX IF NOT EXISTS idx_generation_edits_generation ON generation_edits(generation_id);
+
+-- trainer DPO export의 turn당 rejected 후보 조회 (rejected=1 필터를 인덱스로 태움)
+CREATE INDEX IF NOT EXISTS idx_generations_turn_rejected ON generations(turn_id, rejected);
 """
