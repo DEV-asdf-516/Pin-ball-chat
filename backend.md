@@ -1,61 +1,53 @@
 # Backend (apps/api)
 
 ## 원칙
-- 요청된 작업만 한다. 동작 변경과 구조 변경을 섞지 않는다.
-- 관련 없는 코드·포맷은 건드리지 않는다. 기존 스타일을 따른다.
-- 중복이 2회 생기기 전에는 공통화하지 않는다.
-- 내 수정으로 생긴 unused import/변수/orphan 파일은 제거, 기존 dead code는 유지.
-- 명시 요청 없이 금지: 새 class/registry/factory/DI container, SQLAlchemy,
-  repository 대량 도입, 전면 async 전환, Pydantic model 대량 추가, 폴더 확장.
-- 주석은 #으로만 작성
+- 동작 변경과 구조 변경 분리.
+- 명시 요청 없이 금지: 새 class/registry/factory/DI, SQLAlchemy, repository 대량 도입,
+  전면 async 전환, Pydantic 대량 추가, 폴더 확장.
+- 주석은 `#`만.
 
-## 계층 책임 (src/)
-- `server/` — HTTP 계층: app 생성, router 등록, schema, error 매핑, route handler.
-  도메인 flow·provider 호출·복잡한 DB write 금지. 새 endpoint는 `server/routes/`, `app.py`는 얇게.
-- `domain/` — 유스케이스, prompt 구성, 도메인 검증. FastAPI import·`HTTPException` 금지.
-- `ai/` — provider 연동만, 전부 async. 새 provider는 `AIProvider` 상속 + `name`/`stream()`만 구현.
-  `list_models()`은 optional(기본은 NotImplementedError) — 지원하는 provider만 override.
-  DB write·HTTP response·저장 정책 금지.
-- `core/` — DB connection, schema init, whitelist, low-level query helper.
-- `util/` — 도메인 모르는 순수 helper만. DB·table명·FastAPI 금지.
-- route handler는 파싱 → domain 호출 → error 매핑 → response만.
+## 계층 (src/)
+- `server/` — HTTP만: router 등록, schema, error 매핑, handler. 도메인 flow·provider 호출·복잡한 write 금지.
+  새 endpoint는 `server/routes/`, `app.py`는 얇게. handler는 파싱 → domain 호출 → error 매핑 → response만.
+- `domain/` — 유스케이스, prompt 구성, 검증. FastAPI·`HTTPException` 금지.
+- `ai/` — provider 연동만, 전부 async. 새 provider는 `AIProvider` 상속 + `name`/`stream()`.
+  `list_models()`은 지원 provider만 override. DB write·HTTP response·저장 정책 금지.
+- `core/` — DB connection, schema init, whitelist, low-level helper.
+- `util/` — 도메인 모르는 순수 helper. DB·table명·FastAPI 금지.
 
 ## 콘텐츠 파일
-- 전부 `data/` 밑(배포 시 코드 위치와 무관한 단일 데이터 디렉토리, `PINBALLCHAT_ROOT`로 이동 가능): `data/preferences/` = `.json`(생성 방식만), `data/characters/`·`data/user_profiles/`·`data/plots/` = `.md`(순수 서술만), `data/rules/`에 시스템/요약 프롬프트 JSON.
-- 전역 규칙은 `preferences/global.json`에만 두고 개별 파일에서 반복하지 않는다.
-- OOC는 md 본문 `OOC:` 줄 또는 json `ooc[]` 중 한 곳에만.
-- scope 우선순위: global → genre → character → plot → conversation (list는 extend, scalar는 덮어씀).
-- `kind`는 하드코딩 대신 `domain.catalog.specs.CatalogKind`.
+- 전부 `data/`(`PINBALLCHAT_ROOT`로 이동 가능): `preferences/`=json(생성 방식만),
+  `characters/`·`user_profiles/`·`plots/`=md(순수 서술만), `rules/`=프롬프트 JSON.
+- 전역 규칙은 `preferences/global.json`에만, 개별 파일 반복 금지.
+- OOC는 md `OOC:` 줄 또는 json `ooc[]` 중 한 곳에만.
+- scope: global → genre → character → plot → conversation (list extend, scalar 덮어씀).
+- `kind`는 `domain.catalog.specs.CatalogKind`만.
 
 ## SQL
-- `domain/**`에서 `conn.execute()` 금지 — `core/db/sqlite.py` 함수 + `TableSpec`으로만 쿼리.
-- R은 `ReadQuery`, CUD는 `WriteQuery`. PK 단건은 `ReadQuery/WriteQuery.by_id(spec, value)`.
-- `where`/`set`/`values`/`params`는 `Bind({...})`로 감싼다 (`by_id`는 자동).
-  단, `conn.execute()`에 바로 들어가는 최종 bind dict는 bare `dict` 그대로.
-- 비교·subquery·기존 컬럼 참조는 `Eq/Ne/Gt/Lt/In/NotIn/RawSQL` 마커, 손으로 쓴 SQL은 `RawSQL`.
-- 커서 페이지네이션 WHERE는 `CursorQuery.clause(column, before, prefix=...)`.
-- named binding(`:key`)만 사용, positional `?` 금지. table/column은 whitelist에서만.
-- schema 변경은 별도 작업으로 분리.
-- api 컨테이너 떠 있을 때 실 DB 파일에 호스트 sqlite3로 직접 ALTER/write 금지 — WAL 커넥션과 충돌해 `disk I/O error` 남; `docker compose exec api python -c "..."`로 컨테이너 안에서 하거나 컨테이너 내리고 작업.
+- `domain/**`에서 `conn.execute()` 금지 — `core/db/sqlite.py` 함수 + `TableSpec`만.
+- R=`ReadQuery`, CUD=`WriteQuery`, PK 단건=`.by_id(spec, value)`.
+- `where/set/values/params`는 `Bind({...})` (by_id 자동). `conn.execute()` 직전 최종 dict만 bare.
+- 비교·subquery·컬럼 참조는 `Eq/Ne/Gt/Lt/In/NotIn/RawSQL`, 수기 SQL은 `RawSQL`.
+- 커서 WHERE는 `CursorQuery.clause(column, before, prefix=...)`.
+- named binding(`:key`)만, positional `?` 금지. table/column은 whitelist만.
+- schema 변경은 별도 작업.
+- api 컨테이너 가동 중 호스트 sqlite3로 실 DB 직접 write 금지(WAL 충돌 → disk I/O error).
+  `docker compose exec api python -c "..."` 또는 컨테이너 내리고 작업.
 
 ## 이름
-- `helper`/`common`/`misc` 같은 포괄 이름 금지. 파일 내부 전용 helper는 `_prefix`.
+- `helper/common/misc` 금지. 파일 내부 전용은 `_prefix`.
+- 도메인 public CUD는 `create_/update_/delete_`. DB 동사(select/insert/upsert/save)는 `core/db`·내부 helper만.
+- 유스케이스: 선택=`choose_`, 준비=`prepare_`, 시작=`start_`, 기록=`record_`.
+- 콜백은 `on_<이벤트>`(슬롯·bind 파라미터·등록 메서드), 타입 별칭은 `<이벤트>Handler`. `handle_` 금지.
+  콜백으로도 등록되는 동작 메서드는 동사 이름 유지(예: `_abort_connection`).
 
-### CRUD 작명
-- 도메인 public CUD는 `create_`/`update_`/`delete_`를 쓴다.
-- `select`/`insert`/`upsert`/`save` 같은 DB 동사는 `core/db`나 내부 helper에만 둔다.
-
-### 유스케이스 작명
-- 후보·옵션 선택은 `choose_`, 실행 전 준비는 `prepare_`, 프로세스 시작은 `start_`, 결과·이벤트 기록은 `record_`를 쓴다.
+## core/db ↔ libs/dbkit
+- 쿼리 빌더 전체(`TableSpec`/`Bind`/쿼리 클래스/마커/`find_one` 등)는 `libs/dbkit`,
+  `core.db`가 재노출 — `domain/**`의 `from core.db import ...`는 불변.
+- `core/db/sqlite.py`에는 pinballchat 전용만: `TABLE_NAMES`, `SCHEMA_DDL`, 경로 계산.
+- dbkit은 스키마·경로를 모르는 순수 엔진(타 서비스 재사용 가능).
 
 ## 검증
-```bash
 python -m compileall -q src
 PYTHONPATH=src:../../libs python -c "from server.app import create_app; print(create_app().title)"
-```
-테스트가 있으면 전체 실행.
-
-## core/db와 libs/dbkit
-- `TableSpec`/`Bind`/`ReadQuery`/`WriteQuery`/`Eq`/`Ne`/`Gt`/`Lt`/`In`/`NotIn`/`CursorQuery`와 쿼리 빌더 함수(`find_one`/`find_all`/`insert`/`upsert`/`update`/`delete`/...)는 `libs/dbkit`(repo 공통 모듈)에 있고, `core.db`가 그대로 재노출한다 — `domain/**`의 import(`from core.db import ...`)는 안 바뀐다.
-- `core/db/sqlite.py`에는 pinballchat 전용 부분만 남는다: `TABLE_NAMES`, `SCHEMA_DDL` 연결, `ROOT`/`DATA_ROOT`/`DB_PATH` 경로 계산.
-- `libs/dbkit` 자체는 스키마·경로를 모르는 순수 쿼리 엔진이라 trainer 등 다른 서비스에서도 재사용 가능하다.
+테스트 있으면 전체 실행.

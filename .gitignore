@@ -10,7 +10,9 @@ __MACOSX/
 venv/
 
 .claude/
+!.claude/hooks/**
 .codex/
+!.codex/hooks/**
 .vscode/
 .idea/
 docs/
