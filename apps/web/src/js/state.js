@@ -16,7 +16,7 @@ export const state = {
     page: { nextCursor: null, hasMore: false, loading: false },
   },
   streaming: false,
-  ui: { chatFromList: false },
+  ui: { chatFromList: false, detailFromChat: false },
   composerEdit: null,
   pendingUserResend: null,
   composerHeight: null,

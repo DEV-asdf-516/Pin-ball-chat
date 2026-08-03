@@ -263,9 +263,20 @@ function openSettingsSheet() {
   const inChat = canEditConversationSettings();
   $("settingsTitle").textContent = inChat ? "대화 설정" : "UI 설정";
   setModelSettingsVisible(inChat);
+  updateZetaImportAvailability();
   $("settingsSaveBtn").textContent = inChat ? "대화 설정 저장" : "저장";
   $("settingsSheet").classList.add("open");
   if (inChat) refreshModelOptions();
+}
+
+function updateZetaImportAvailability() {
+  const conv = activeConversation();
+  const introPrefix = conv ? `intro_${conv.id}_` : "";
+  const available = Boolean(conv?.userProfileId && state.activeMessages.list.every((message) => (
+    !message.turn_id && String(message.id || "").startsWith(introPrefix)
+  )));
+  $("openZetaImportBtn").disabled = !available;
+  $("zetaImportAvailability").textContent = available ? "" : "메시지가 없는 방에서만 사용할 수 있습니다.";
 }
 
 function closeSettingsSheet() {
@@ -279,6 +290,8 @@ function closeSettingsSheet() {
 function setModelSettingsVisible(visible) {
   $("modelSettingsSection").hidden = !visible;
   $("modelSettingsSection").classList.toggle("is-hidden", !visible);
+  $("importSettingsSection").hidden = !visible;
+  $("importSettingsSection").classList.toggle("is-hidden", !visible);
   if (!visible) closeDropdowns("#providerSelectMenu.open, #modelSelectMenu.open");
 }
 

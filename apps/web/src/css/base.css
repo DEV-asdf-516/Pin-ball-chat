@@ -2,6 +2,10 @@
   box-sizing: border-box;
 }
 
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
 [hidden] {
   display: none !important;
 }
@@ -13,6 +17,8 @@ body {
   color: var(--text);
   display: grid;
   place-items: center;
+  font-feature-settings: "kern" 1, "ss01" 1;
+  text-rendering: optimizeLegibility;
 }
 
 :root[data-chat-active="true"] body {
@@ -28,12 +34,27 @@ select {
 
 button {
   border: 0;
-  border-radius: 8px;
-  min-height: 40px;
-  padding: 0 12px;
+  border-radius: var(--radius-md);
+  min-height: 44px;
+  padding: 0 14px;
   background: var(--surface-raised);
   color: var(--text);
   cursor: pointer;
+  transition: background-color var(--motion-fast) ease, color var(--motion-fast) ease, transform var(--motion-fast) ease, opacity var(--motion-fast) ease;
+  touch-action: manipulation;
+}
+
+button:not(:disabled):active {
+  transform: scale(.975);
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 button:disabled {
@@ -53,7 +74,7 @@ textarea,
 select {
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--input-bg);
   color: var(--text);
   outline: none;
@@ -63,12 +84,13 @@ input:focus,
 textarea:focus,
 select:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 input,
 select {
-  min-height: 40px;
-  padding: 0 11px;
+  min-height: 46px;
+  padding: 0 13px;
 }
 
 select {
@@ -79,11 +101,27 @@ textarea {
   resize: none;
   max-height: var(--composer-max-height, 136px);
   line-height: 1.45;
-  padding: 10px 16px 10px 11px;
+  padding: 12px 14px;
   overflow-y: auto;
   scrollbar-gutter: stable;
   scrollbar-color: var(--scrollbar-thumb) transparent;
   scrollbar-width: thin;
+}
+
+::selection {
+  background: var(--accent-2);
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
 }
 
 textarea::-webkit-scrollbar,

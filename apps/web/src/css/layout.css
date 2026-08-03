@@ -8,7 +8,7 @@
   display: grid;
   grid-template-rows: auto 1fr;
   overflow: hidden;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, .16);
+  box-shadow: var(--shadow-float);
 }
 
 :root[data-keyboard-open="true"] body {
@@ -23,28 +23,28 @@
 }
 
 header {
-  min-height: calc(56px + env(safe-area-inset-top));
-  padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
-  border-bottom: 1px solid var(--border);
+  min-height: calc(64px + env(safe-area-inset-top));
+  padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
+  border-bottom: 0;
   display: grid;
   grid-template-columns: 40px 1fr auto;
   gap: 8px;
   align-items: center;
-  background: color-mix(in srgb, var(--shell-bg) 92%, transparent);
-  backdrop-filter: blur(14px);
+  background: color-mix(in srgb, var(--shell-bg) 88%, transparent);
+  backdrop-filter: blur(20px) saturate(1.2);
   z-index: 2;
 }
 
 .chat-header {
-  min-height: calc(56px + env(safe-area-inset-top));
-  padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
-  border-bottom: 1px solid var(--border);
+  min-height: calc(64px + env(safe-area-inset-top));
+  padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
+  border-bottom: 0;
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr) auto;
-  gap: 8px;
+  gap: 12px;
   align-items: center;
-  background: color-mix(in srgb, var(--shell-bg) 92%, transparent);
-  backdrop-filter: blur(14px);
+  background: color-mix(in srgb, var(--shell-bg) 88%, transparent);
+  backdrop-filter: blur(20px) saturate(1.2);
   z-index: 2;
 }
 
@@ -52,6 +52,36 @@ header {
   display: flex;
   gap: 6px;
   align-items: center;
+}
+
+.header-leading {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+}
+
+.header-leading > * {
+  grid-area: 1 / 1;
+}
+
+.brand-mark {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.brand-mark-image {
+  width: 38px;
+  height: 38px;
+  display: block;
+  object-fit: contain;
+}
+
+:root[data-theme="dark"] .brand-mark-image {
+  filter: brightness(1.45) saturate(.92);
 }
 
 header .icon-btn,
@@ -75,6 +105,7 @@ main {
 
 .screen.active {
   display: grid;
+  animation: screen-enter var(--motion-medium) ease-out;
 }
 
 #plotsScreen,
@@ -114,10 +145,10 @@ main {
 }
 
 .toolbar {
-  padding: 12px;
-  border-bottom: 1px solid var(--border);
+  padding: 10px 14px 14px;
+  border-bottom: 0;
   display: grid;
-  gap: 10px;
+  gap: 12px;
   background: var(--shell-bg);
 }
 
@@ -130,38 +161,43 @@ main {
 }
 
 .list {
-  padding: 12px;
+  padding: 2px 14px calc(24px + env(safe-area-inset-bottom));
   display: grid;
   align-content: start;
-  gap: 10px;
+  gap: 12px;
 }
 
 #plotList {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 10px;
+  padding-bottom: calc(90px + env(safe-area-inset-bottom));
 }
 
 .bottom {
-  padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--border);
-  background: var(--shell-bg);
+  padding: 10px 14px calc(14px + env(safe-area-inset-bottom));
+  border-top: 0;
+  background: color-mix(in srgb, var(--shell-bg) 88%, transparent);
+  backdrop-filter: blur(20px) saturate(1.2);
 }
 
 .detail {
-  padding: 16px 12px;
+  padding: 12px 14px 28px;
 }
 
 .messages {
-  padding: 12px;
+  padding: 12px 14px 20px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  scroll-behavior: smooth;
 }
 
 .composer {
   min-height: 0;
-  padding: 5px 12px calc(10px + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--border);
-  background: var(--shell-bg);
+  padding: 6px 14px calc(12px + env(safe-area-inset-bottom));
+  border-top: 0;
+  background: color-mix(in srgb, var(--shell-bg) 90%, transparent);
+  backdrop-filter: blur(20px) saturate(1.2);
   display: grid;
   grid-template-columns: minmax(0, 1fr) 44px;
   grid-template-rows: 12px auto;
@@ -178,6 +214,17 @@ main {
 .composer-input-wrap textarea {
   padding-left: 42px;
   padding-right: 42px;
+  min-height: 46px;
+  border-color: transparent;
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  scrollbar-gutter: auto;
+  scrollbar-width: none;
+}
+
+.composer-input-wrap textarea::-webkit-scrollbar {
+  display: none;
 }
 
 .composer-symbol {
@@ -187,7 +234,7 @@ main {
   min-height: 32px;
   padding: 0;
   position: absolute;
-  top: 5px;
+  top: 7px;
   display: grid;
   place-items: center;
   border: 0;
@@ -231,6 +278,17 @@ main {
   bottom: 0;
   left: 0;
   z-index: 4;
+}
+
+@keyframes screen-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .composer.expanded .composer-symbol {
@@ -320,4 +378,46 @@ main {
   height: 3px;
   border-radius: 999px;
   background: var(--border);
+}
+
+:root[data-route="plotCreate"] header,
+:root[data-route="plotManage"] header,
+:root[data-route="detail"] header {
+  min-height: calc(56px + env(safe-area-inset-top));
+  padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--shell-bg) 92%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+#plotManageScreen .toolbar {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  gap: 10px;
+}
+
+#plotList {
+  padding: 12px;
+  padding-bottom: 12px;
+  gap: 10px;
+}
+
+#plotCreateScreen .detail,
+#plotManageScreen .detail,
+#detailScreen .detail {
+  padding: 16px 12px;
+}
+
+#plotCreateScreen .bottom,
+#detailScreen .bottom {
+  padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--shell-bg);
+  backdrop-filter: none;
+}
+
+:root[data-route="plotCreate"] .screen.active,
+:root[data-route="plotManage"] .screen.active,
+:root[data-route="detail"] .screen.active {
+  animation: none;
 }

@@ -12,7 +12,10 @@ export function chatPage() {
       }, [icon("chevronLeft")]),
       el("div", { className: "chat-head-title" }, [
         el("strong", { id: "chatHeaderTitle", text: "채팅" }),
-        el("span", { id: "chatHeaderSub" }),
+        el("span", {
+          id: "chatHeaderSub",
+          attrs: { role: "button", tabindex: "0", title: "플롯 상세 보기", "aria-label": "플롯 상세 보기" },
+        }),
       ]),
       el("div", { className: "header-actions" }, [
         el("button", {
@@ -30,6 +33,15 @@ export function chatPage() {
       ]),
     ]),
     el("div", { id: "messages", className: "messages" }),
+    el("button", {
+      id: "latestMessageBtn",
+      className: "latest-message-button",
+      type: "button",
+      attrs: { hidden: "", title: "최근 메시지로 이동", "aria-label": "최근 메시지로 이동" },
+    }, [
+      icon("chevronDown"),
+      el("span", { text: "최근으로" }),
+    ]),
     el("form", { id: "composer", className: "composer" }, [
       el("div", {
         id: "composerHandle",
@@ -39,7 +51,7 @@ export function chatPage() {
         el("span"),
       ]),
       el("div", { className: "composer-input-wrap" }, [
-        el("textarea", { id: "messageInput", attrs: { rows: "1" } }),
+        el("textarea", { id: "messageInput", attrs: { rows: "1", placeholder: "메시지 보내기" } }),
         el("button", {
           id: "insertMentionBtn",
           className: "composer-symbol composer-symbol-start",

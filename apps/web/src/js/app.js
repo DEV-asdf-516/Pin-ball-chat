@@ -1,7 +1,8 @@
 import { api, apiBase } from "./api.js";
 import { activeConversation, conversationActivated, messagesLoaded } from "./actions.js";
 import { createCharacter, createPlot, loadCatalog, loadMorePlots, openPlot, renderPlots, uploadCharacterAvatar } from "./catalog.js";
-import { bindUserProfileSheet, cancelChatStream, cancelComposerEdit, canResendEditedUserMessage, canSendEmptyMessage, deleteMessage, deleteMessagesFrom, editGeneration, editUserMessage, hydrateTurnGenerations, loadMessages, markLastUserMessage, messageNode, needsUserProfileSelection, openUserProfileSheet, promptUserProfileIfNeeded, regenerate, resendEditedUserMessage, saveComposerEdit, sendMessage, showAssistantVariant, updateComposer } from "./chat.js";
+import { bindUserProfileSheet, cancelComposerEdit, canResendEditedUserMessage, canSendEmptyMessage, deleteMessage, deleteMessagesFrom, editGeneration, editUserMessage, hydrateTurnGenerations, loadMessages, markLastUserMessage, messageNode, needsUserProfileSelection, openUserProfileSheet, promptUserProfileIfNeeded, regenerate, resendEditedUserMessage, saveComposerEdit, sendMessage, showAssistantVariant, updateComposer } from "./chat.js";
+import { scrollMessagesToLatest, syncLatestMessageButton } from "./chat-scroll.js";
 import { keys } from "./config.js";
 import * as conversations from "./conversations.js";
 import { $, bindGrowingTextarea, closeDropdowns, confirmDialog, el, openDropdown, parseJson, toast, toggleDropdown } from "./dom.js";
@@ -12,6 +13,7 @@ import { bindPlotManager, closePlotManagerEdit, openManagedPlot, openPlotManager
 import { applyTheme, bindSettings, loadConversationSettings, loadSettings } from "./settings.js";
 import { state } from "./state.js";
 import { mountApp, showScreen } from "./ui.js";
+import { bindZetaImport } from "./importer.js";
 
 let cancelInlineTitleEdit = null;
 
@@ -262,9 +264,9 @@ function bindChat() {
   let longPressTimer = null;
   let longPressOpened = false;
   let lastComposerResetTap = 0;
+  let loadingOlderMessages = false;
   $("chatBackBtn").onclick = async () => {
     if (cancelActiveTitleEdit()) return;
-    cancelChatStream();
     if (state.ui.chatFromList) {
       showScreen("conversations");
       await conversations.loadConversations();
@@ -311,7 +313,11 @@ function bindChat() {
   $("messageInput").oninput = () => {
     resizeComposerInput();
     updateComposer();
+    syncLatestMessageButton();
   };
+  $("messageInput").onfocus = syncLatestMessageButton;
+  $("messageInput").onblur = syncLatestMessageButton;
+  $("latestMessageBtn").onclick = scrollMessagesToLatest;
   $("messageInput").onkeydown = (event) => {
     if (event.isComposing) return;
     if (event.key === "Escape" && state.composerEdit) {
@@ -394,19 +400,33 @@ function bindChat() {
     }
   };
   $("messages").onscroll = async () => {
-    if ($("messages").scrollTop >= 40 || !state.activeMessages.hasMore || state.streaming) return;
+    syncLatestMessageButton();
+    if ($("messages").scrollTop >= 40 || !state.activeMessages.hasMore || state.streaming || loadingOlderMessages) return;
+    loadingOlderMessages = true;
     const height = $("messages").scrollHeight;
+    const convId = state.activeConversationId;
+    const cursor = state.activeMessages.nextCursor;
     try {
-      const convId = state.activeConversationId;
-      const page = await api(`/api/conversations/${convId}/messages?before=${state.activeMessages.nextCursor}&limit=30`);
+      const page = await api(`/api/conversations/${convId}/messages?before=${cursor}&limit=30`);
+      if (state.activeConversationId !== convId || state.activeMessages.nextCursor !== cursor) return;
+      const existingIds = new Set(
+        [...$("messages").querySelectorAll(".message-group[data-message]")]
+          .map((node) => node.dataset.message)
+          .filter(Boolean),
+      );
       messagesLoaded(page, true);
-      const nodes = page.messages.map(messageNode).filter(Boolean);
+      const nodes = page.messages
+        .filter((message) => !message.id || !existingIds.has(message.id))
+        .map(messageNode)
+        .filter(Boolean);
       const notice = $("messages").querySelector(".notice");
       notice ? notice.after(...nodes) : $("messages").prepend(...nodes);
       markLastUserMessage();
       hydrateTurnGenerations($("messages"));
       $("messages").scrollTop = $("messages").scrollHeight - height;
-    } catch {}
+    } catch {} finally {
+      loadingOlderMessages = false;
+    }
   };
 }
 
@@ -428,9 +448,11 @@ function bindHeaderTitleEdit() {
   let timer = null;
   let titleEditOpened = false;
   const title = document.querySelector(".chat-head-title");
+  const plotTitle = $("chatHeaderSub");
   const clear = () => clearTimeout(timer);
   title.onpointerdown = (event) => {
     if (event.target.closest(".title-inline-input")) return;
+    if (event.target.closest("#chatHeaderSub")) return;
     if (state.route !== "chat" || !activeConversation()) return;
     timer = setTimeout(() => {
       titleEditOpened = true;
@@ -442,16 +464,38 @@ function bindHeaderTitleEdit() {
   title.onpointerleave = clear;
   title.oncontextmenu = (event) => {
     if (state.route !== "chat") return;
+    if (event.target.closest("#chatHeaderSub")) return;
     event.preventDefault();
     editConversationTitle($("chatHeaderTitle"));
   };
   title.onclick = (event) => {
     if (event.target.closest(".dropdown, .title-inline-input")) return;
+    if (event.target.closest("#chatHeaderSub")) {
+      event.preventDefault();
+      openChatPlotDetail();
+      return;
+    }
     if (titleEditOpened) {
       titleEditOpened = false;
       event.preventDefault();
     }
   };
+  plotTitle.onkeydown = (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    openChatPlotDetail();
+  };
+}
+
+async function openChatPlotDetail() {
+  if (state.route !== "chat") return;
+  const conv = activeConversation();
+  const plotId = state.selectedPlot?.id || conv?.plotId;
+  if (!plotId) return;
+  await openPlot(plotId, conv?.userProfileId, state.selectedPlot);
+  if (!state.selectedPlot) return;
+  state.ui.detailFromChat = true;
+  showScreen("detail");
 }
 
 function openConversationCardMenu(target) {
@@ -710,10 +754,12 @@ function resizeComposerInput() {
   input.style.setProperty("--composer-max-height", `${state.composerMaxHeight}px`);
   if (state.composerHeight) {
     input.style.height = `${state.composerHeight}px`;
+    syncLatestMessageButton();
     return;
   }
   input.style.height = "auto";
   input.style.height = Math.min(input.scrollHeight, state.composerMaxHeight) + "px";
+  syncLatestMessageButton();
 }
 
 async function init() {
@@ -723,6 +769,11 @@ async function init() {
   bindChatRefreshGuard();
   $("backBtn").onclick = () => {
     if (cancelActiveTitleEdit()) return;
+    if (state.route === "detail" && state.ui.detailFromChat) {
+      state.ui.detailFromChat = false;
+      showScreen("chat");
+      return;
+    }
     if (state.route === "plotManage" && closePlotManagerEdit()) return;
     else showPlots();
   };
@@ -733,6 +784,7 @@ async function init() {
   bindChat();
   bindHeaderTitleEdit();
   bindSettings();
+  bindZetaImport();
   bindUserProfileSheet();
   applyTheme();
   loadSettings();

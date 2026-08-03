@@ -1,4 +1,4 @@
-import { providerSettingsSheet, settingsSheet } from "./settings-sheet.js";
+import { providerSettingsSheet, settingsSheet, zetaImportDialog } from "./settings-sheet.js";
 import { userProfileSheet } from "./user-profile-sheet.js";
 import { icon } from "./icons.js";
 import { el } from "../dom.js";
@@ -13,12 +13,22 @@ export function appShell() {
   return [
     el("div", { className: "shell" }, [
       el("header", { id: "appHeader" }, [
-        el("button", {
-          id: "backBtn",
-          className: "icon-btn",
-          type: "button",
-          attrs: { title: "뒤로가기", "aria-label": "뒤로가기" },
-        }, [icon("chevronLeft")]),
+        el("div", { className: "header-leading" }, [
+          el("span", {
+            id: "brandMark",
+            className: "brand-mark",
+            attrs: { "aria-hidden": "true" },
+          }, [el("img", {
+            className: "brand-mark-image",
+            attrs: { src: "/assets/pinball-brand-mark-v2.png", alt: "", width: "512", height: "512" },
+          })]),
+          el("button", {
+            id: "backBtn",
+            className: "icon-btn",
+            type: "button",
+            attrs: { title: "뒤로가기", "aria-label": "뒤로가기" },
+          }, [icon("chevronLeft")]),
+        ]),
         el("div", { className: "head-title" }, [
           el("strong", { id: "headerTitle", text: "Pinballchat" }),
           el("span", { id: "headerSub", text: "내 플롯" }),
@@ -42,6 +52,7 @@ export function appShell() {
     settingsSheet(),
     providerSettingsSheet(),
     userProfileSheet(),
+    zetaImportDialog(),
     el("div", { id: "appDialog", className: "dialog" }, [
       el("form", { id: "appDialogPanel", className: "dialog-panel" }),
     ]),

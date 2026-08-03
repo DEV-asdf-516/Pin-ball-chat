@@ -1,5 +1,6 @@
 import { appShell } from "./components/layout.js";
 import { activeConversation } from "./actions.js";
+import { cancelChatStream } from "./chat.js";
 import { keys } from "./config.js";
 import { $, closeDropdowns, setChildren } from "./dom.js";
 import { state } from "./state.js";
@@ -12,6 +13,7 @@ export function setHeader(title, sub, back = false) {
   $("headerTitle").textContent = title;
   $("headerSub").textContent = sub || "";
   $("backBtn").style.visibility = back ? "visible" : "hidden";
+  $("brandMark").hidden = back;
 }
 
 export function setChatHeader(title, sub) {
@@ -22,7 +24,10 @@ export function setChatHeader(title, sub) {
 export function showScreen(name, options = {}) {
   const previousRoute = state.route;
   const historyMode = options.history || "push";
+  if (name !== "detail") state.ui.detailFromChat = false;
+  if (previousRoute === "chat" && name !== "chat") cancelChatStream();
   state.route = name;
+  document.documentElement.dataset.route = name;
   closeDropdowns();
   $("settingsSheet")?.classList.remove("open");
   $("userProfileSheet")?.classList.remove("open");

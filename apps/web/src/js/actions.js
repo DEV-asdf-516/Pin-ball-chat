@@ -51,8 +51,15 @@ export function conversationProfileChanged(conversationId, userProfileId) {
 
 export function messagesLoaded(page, prepend = false) {
   const messages = page.messages || [];
+  const combined = prepend ? [...messages, ...state.activeMessages.list] : messages;
+  const seen = new Set();
   state.activeMessages = {
-    list: prepend ? [...messages, ...state.activeMessages.list] : messages,
+    list: combined.filter((message) => {
+      if (!message.id) return true;
+      if (seen.has(message.id)) return false;
+      seen.add(message.id);
+      return true;
+    }),
     nextCursor: page.nextCursor || null,
     hasMore: Boolean(page.hasMore),
   };
@@ -61,7 +68,7 @@ export function messagesLoaded(page, prepend = false) {
 
 export function userProfileUpdated(user) {
   state.catalog.users.byId.set(user.id, user);
-  if (!state.catalog.users.order.includes(user.id)) state.catalog.users.order.push(user.id);
+  if (!state.catalog.users.order.includes(user.id)) state.catalog.users.order.unshift(user.id);
   notify("catalog.users");
 }
 

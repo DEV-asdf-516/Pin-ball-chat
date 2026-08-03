@@ -1,5 +1,6 @@
 import { api, apiBase, sseError, streamSse } from "./api.js";
 import { activeConversation, conversationProfileChanged, messagesLoaded, userProfileDeleted, userProfileUpdated } from "./actions.js";
+import { messagesNearLatest, settleMessagesAtLatest } from "./chat-scroll.js";
 import { $, closeDropdowns, confirmDialog, el, parseJson, setChildren, toast, toggleDropdown } from "./dom.js";
 import { renderMarkdown } from "./markdown.js";
 import { providerErrorMessage } from "./provider-errors.js";
@@ -8,14 +9,21 @@ import { state } from "./state.js";
 
 const NO_USER_PROFILE = "conversation has no user_profile set";
 let activeStreamAbort = null;
+let messageLoadVersion = 0;
 
 export async function loadMessages(before) {
   const convId = activeConversation()?.id;
   if (!convId) return;
+  const loadVersion = ++messageLoadVersion;
   const query = before ? `?before=${encodeURIComponent(before)}&limit=30` : "?limit=30";
   const page = await api(`/api/conversations/${convId}/messages${query}`);
+  if (loadVersion !== messageLoadVersion || activeConversation()?.id !== convId) return;
   messagesLoaded(page, Boolean(before));
   renderMessages(page.messages || []);
+}
+
+export function invalidateMessageLoads() {
+  messageLoadVersion += 1;
 }
 
 export function hydrateTurnGenerations(root = $("messages")) {
@@ -303,6 +311,7 @@ export function needsUserProfileSelection() {
 }
 
 export function cancelChatStream() {
+  invalidateMessageLoads();
   if (!activeStreamAbort) return;
   activeStreamAbort.abort();
   activeStreamAbort = null;
@@ -327,7 +336,7 @@ function renderMessages(messages) {
   markLastUserMessage();
   hydrateTurnGenerations();
   updateRegenActions();
-  $("messages").scrollTop = $("messages").scrollHeight;
+  settleMessagesAtLatest();
 }
 
 function appendUserMessage(content = "") {
@@ -359,7 +368,9 @@ function showUserProfileList() {
 }
 
 function renderUserProfileList() {
-  const users = [...state.catalog.users.byId.values()];
+  const users = state.catalog.users.order
+    .map((id) => state.catalog.users.byId.get(id))
+    .filter(Boolean);
   setChildren($("userProfileList"), users.length
     ? users.map(userProfileRow)
     : [el("div", { className: "empty", text: "프로필이 없습니다." })]);
@@ -620,8 +631,10 @@ async function loadTurnGenerations(node) {
     const variants = (data.generations || []).map((item) => ({ gen: item.generationId, content: item.content }));
     if (variants.length < 2) return;
     const selected = selectedVariantIndex(data, node, variants);
+    const keepAtLatest = messagesNearLatest();
     node.dataset.variants = JSON.stringify(variants);
     renderAssistantVariant(node, selected);
+    if (keepAtLatest) settleMessagesAtLatest();
   } catch {}
 }
 
@@ -643,7 +656,7 @@ function userMessageNode(content, messageId = "", turn = "") {
     dataset: { message: messageId, turn, content },
   });
   setChildren(node, [
-    ...(explicitSpeaker ? parts.flatMap(speakerPartNodes) : [namedUserBubble(bubbleNode("user", content))]),
+    ...(explicitSpeaker ? parts.flatMap(userSpeakerPartNodes) : [namedUserBubble(bubbleNode("user", content))]),
     userActionNode(messageId),
   ]);
   return node;
@@ -695,7 +708,12 @@ function speakerPartNodes(part) {
       ]),
     ])];
   }
-  return [bubbleNode("assistant", part.text)];
+  return [namedAssistantBubble(bubbleNode("assistant", part.text))];
+}
+
+function userSpeakerPartNodes(part) {
+  if (part.speaker == null) return [namedUserBubble(bubbleNode("user", part.text))];
+  return speakerPartNodes(part);
 }
 
 function namedAssistantBubble(bubble) {

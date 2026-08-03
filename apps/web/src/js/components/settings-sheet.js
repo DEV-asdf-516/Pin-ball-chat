@@ -4,6 +4,7 @@ import { icon } from "./icons.js";
 export function settingsSheet() {
   return el("div", { id: "settingsSheet", className: "sheet", attrs: { role: "dialog", "aria-modal": "true" } }, [
     el("form", { id: "settingsForm", className: "panel" }, [
+      el("div", { className: "sheet-handle", attrs: { "aria-hidden": "true" } }),
       el("div", { className: "row" }, [
         el("strong", { id: "settingsTitle", text: "설정" }),
         el("button", {
@@ -60,7 +61,42 @@ export function settingsSheet() {
           icon("gear"),
         ]),
       ]),
+      el("section", { id: "importSettingsSection", className: "settings-section" }, [
+        el("button", { id: "openZetaImportBtn", className: "zeta-import-entry", type: "button" }, [
+          el("span", { className: "zeta-import-entry-mark", text: "Z" }),
+          el("span", { className: "zeta-import-entry-copy" }, [
+            el("strong", { text: "제타 대화 불러오기" }),
+          ]),
+          el("span", { className: "zeta-import-entry-arrow", text: "→", attrs: { "aria-hidden": "true" } }),
+        ]),
+        el("span", { id: "zetaImportAvailability", className: "meta" }),
+      ]),
       el("button", { id: "settingsSaveBtn", className: "primary", type: "submit", text: "저장" }),
+    ]),
+  ]);
+}
+
+export function zetaImportDialog() {
+  return el("div", { id: "zetaImportDialog", className: "dialog zeta-import-dialog", attrs: { role: "dialog", "aria-modal": "true" } }, [
+    el("div", { id: "zetaImportPanel", className: "dialog-panel zeta-import-panel", dataset: { phase: "idle" } }, [
+      el("div", { className: "zeta-import-handle", attrs: { "aria-hidden": "true" } }),
+      el("div", { className: "zeta-import-header" }, [
+        el("div", { className: "zeta-import-heading" }, [
+          el("span", { className: "zeta-import-eyebrow", text: "ZETA IMPORT" }),
+          el("strong", { text: "대화 이어 붙이기" }),
+        ]),
+        el("button", { id: "closeZetaImportBtn", className: "icon-btn", type: "button", text: "×", attrs: { "aria-label": "닫기" } }),
+      ]),
+      el("input", { id: "zetaImportFiles", type: "file", attrs: { accept: ".json,application/json", multiple: "" } }),
+      el("div", { id: "zetaImportStatus", className: "zeta-import-status", attrs: { "aria-live": "polite" } }),
+      el("div", { className: "zeta-import-progress-wrap" }, [
+        el("progress", { id: "zetaImportProgress", attrs: { max: "1", value: "0" } }),
+      ]),
+      el("div", { id: "zetaImportPreview", className: "zeta-import-preview" }),
+      el("div", { className: "zeta-import-actions" }, [
+        el("button", { id: "chooseZetaImportFilesBtn", className: "zeta-import-choose", type: "button", text: "다른 파일 선택" }),
+        el("button", { id: "commitZetaImportBtn", className: "primary zeta-import-commit", type: "button", text: "대화 불러오기", attrs: { disabled: "" } }),
+      ]),
     ]),
   ]);
 }
