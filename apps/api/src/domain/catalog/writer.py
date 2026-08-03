@@ -59,9 +59,6 @@ def upsert_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, payload: Ca
     upsert(conn, spec, values)
 
 def create_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, data: dict, root: Path = DATA_ROOT) -> dict:
-    if data.get("type", kind) != kind:
-        raise ValueError(f"type must be {kind}")
-    
     if "id" not in data:
         raise ValueError("id is required")
     
@@ -102,9 +99,6 @@ def update_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, item_id: st
     _validate_id(item_id)
 
     data = {**data, "id": item_id}
-
-    if data.get("type", kind) != kind:
-        raise ValueError(f"type must be {kind}")
 
     path: Path = _file_path(kind, item_id, root)
 

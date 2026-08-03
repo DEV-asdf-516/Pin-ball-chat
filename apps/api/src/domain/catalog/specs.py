@@ -146,6 +146,9 @@ PAYLOAD_CLASS: dict[CatalogKind, type[CatalogPayload]] = {
 def parse_catalog_data(kind: CatalogKind, data: dict) -> CatalogPayload:
     # data는 콘텐츠 파일/API 요청 바디에서 온 camelCase wire format dict다.
     # CatalogPayload 필드는 snake_case라서 매칭 전에 키를 변환한다.
+    if data.get("type", kind) != kind:
+        raise ValueError(f"type must be {kind}")
+
     cls: type[CatalogPayload] = PAYLOAD_CLASS[kind]
     
     known_fields: set[str] = {f.name for f in fields(cls)}

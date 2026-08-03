@@ -25,10 +25,6 @@ def import_catalog(conn: sqlite3.Connection, root: Path) -> list[str]:
             try:
                 catalog: LoadedCatalog = load_catalog_file(path)
                 raw: dict = catalog.data
-
-                if raw.get("type", spec.kind) != spec.kind:
-                    raise ValueError(f"type must be {spec.kind}")
-
                 payload: CatalogPayload = parse_catalog_data(spec.kind, raw)
 
                 if get_safe_tuple(FORWARD_REFS, spec.kind):
