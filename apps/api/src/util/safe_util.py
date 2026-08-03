@@ -1,3 +1,14 @@
+import json
+
+
+def parse_json_dict(value: object) -> dict | None:
+    try:
+        parsed: object = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
 def get_safe_str(source: dict, key: str) -> str:
     return source.get(key) or ""
 

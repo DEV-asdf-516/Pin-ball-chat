@@ -1,5 +1,4 @@
 import asyncio
-import json
 import re
 import time
 from dataclasses import dataclass, field, replace
@@ -10,6 +9,7 @@ from ai.specs import ProviderName
 from ai.runtime.claude_runtime import _COMMAND, _RUNTIME_ROOT, _build_runtime_env, runtime, ClaudeCliRuntime
 from ai.runtime.util import RUNTIME_UMASK, GenerationGateBusyError, reap_process_group, remaining_seconds, run_subprocess_capture
 from ai.settings import RUNTIME_FIRST_DELTA_TIMEOUT, RUNTIME_INTERRUPT_GRACE_SECONDS, RUNTIME_LOGIN_TIMEOUT
+from util.safe_util import parse_json_dict
 
 
 _url_pattern = re.compile(r"https?://[^\s\]\)]+")
@@ -99,9 +99,10 @@ class _CliAuthStatus:
     async def query(cls) -> "_CliAuthStatus":
         try:
             code, output = await _run_auth_command("auth", "status", "--json")
-            data = json.loads(output) if code == 0 else {}
-        except (OSError, json.JSONDecodeError, ProviderRuntimeError):
-            data = {}
+            data: dict | None = parse_json_dict(output) if code == 0 else None
+        except (OSError, ProviderRuntimeError):
+            data = None
+        data = data or {}
         return cls(
             connected=bool(data.get("loggedIn") or data.get("authenticated") or data.get("isAuthenticated")),
             account_label=data.get("email") or data.get("accountEmail"),

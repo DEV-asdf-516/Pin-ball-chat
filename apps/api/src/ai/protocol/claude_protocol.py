@@ -1,3 +1,4 @@
+import logging
 from enum import Enum
 from pathlib import Path
 from typing import Callable, NamedTuple
@@ -6,6 +7,8 @@ from ai.errors import ErrorRule, ProviderErrorCode, ProviderRuntimeError, match_
 from ai.specs import ProviderName
 from util.safe_util import get_safe_dict, get_safe_str, has_str_field
 
+
+log = logging.getLogger(__name__)
 
 _runtime_error : Callable[..., ProviderRuntimeError] = runtime_error_factory(ProviderName.CLAUDE_CLI)
 
@@ -97,6 +100,8 @@ def _classify_event_error(event: dict) -> ProviderRuntimeError | None:
 
     if rule:
         return _runtime_error(rule.code, rule.message, retryable=rule.retryable)
+
+    log.warning("claude runtime returned an unrecognized error: type=%s subtype=%s error=%s", event_type, result_subtype, error)
 
     if event_type == "error":
         return _runtime_error(ProviderErrorCode.PROVIDER_BAD_GATEWAY, "Claude runtime returned an upstream error", retryable=True)

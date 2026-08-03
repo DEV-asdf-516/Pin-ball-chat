@@ -100,9 +100,10 @@ def classify_event_error(event: dict) -> ProviderRuntimeError:
     if rule:
         return _runtime_error(rule.code, rule.message, retryable=rule.retryable)
 
+    log.warning("codex runtime rejected the request with an unrecognized error: %s", error)
     return _runtime_error(
-        ProviderErrorCode.PROVIDER_BAD_GATEWAY, 
-        "codex runtime rejected the request", 
+        ProviderErrorCode.PROVIDER_BAD_GATEWAY,
+        "codex runtime rejected the request",
         retryable=True
     )
 
