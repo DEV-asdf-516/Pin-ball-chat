@@ -25,6 +25,8 @@ TABLE_NAMES: list[str] = [
     "messages",
     "turns",
     "generations",
+    "user_actions",
+    "generation_edits",
 ]
 
 

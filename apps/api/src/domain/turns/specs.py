@@ -1,16 +1,8 @@
 from dataclasses import dataclass
-from enum import StrEnum
 
 from core.db import TableSpec
 from domain.prompts.system.reader import BuiltPrompt
-
-
-class ActionType(StrEnum):
-    # user_actions 로그에 남기는 이벤트 종류.
-    GENERATION_SHOWN = "generation_shown"
-    GENERATION_REGENERATED = "generation_regenerated"
-    GENERATION_SELECTED = "generation_selected"
-    GENERATION_EDITED = "generation_edited"
+from domain.specs import ActionType
 
 
 @dataclass

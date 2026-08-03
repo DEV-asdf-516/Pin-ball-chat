@@ -8,8 +8,8 @@ from ai.specs import GenerateRequest
 from core.db import Bind, In, Ne, ReadQuery, RawSQL, WriteQuery, delete, fetch_one, find_all, find_one, insert, new_id, select_cols, update
 from core.errors import Conflict, ensure, get_or_raise
 from domain.prompts.system.reader import BuiltPrompt, build_prompt, snapshot_text
-from domain.specs import GenerationParams
-from domain.turns.specs import GENERATION_EDITS, GENERATIONS, MESSAGES, TURNS, USER_ACTIONS, ActionType, PreparedGeneration
+from domain.specs import ActionType, GenerationParams
+from domain.turns.specs import GENERATION_EDITS, GENERATIONS, MESSAGES, TURNS, USER_ACTIONS, PreparedGeneration
 from util.time_util import utc_now_string
 
 
@@ -157,9 +157,9 @@ def prepare_chat_stream(conn: sqlite3.Connection, conversation_id: str, message:
     ts: str = utc_now_string()
     msg_id: str = new_id("msg")
     turn_id: str = new_id("turn")
-    
+
     built: BuiltPrompt = build_prompt(conn, conversation_id, message)
-    
+
     return PreparedGeneration(
         conversation_id=conversation_id,
         turn_id=turn_id,
@@ -286,6 +286,9 @@ def delete_messages(conn: sqlite3.Connection, message_ids: list[str]) -> dict:
     found_ids: set = {r["id"] for r in rows}
     missing: list[str] = [mid for mid in message_ids if mid not in found_ids]
     ensure(not missing, f"message(s) not found: {', '.join(missing)}")
+    
+    if any(row["turn_id"] is None for row in rows):
+        raise Conflict("messages without a turn are immutable")
 
     user_turn_ids: list[str] = sorted({r["turn_id"] for r in rows if r["role"] == "user"})
     assistant_turn_ids: list[str] = sorted({r["turn_id"] for r in rows if r["role"] == "assistant"})

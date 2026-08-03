@@ -1,8 +1,9 @@
 import sqlite3
 
-from core.db import CursorClause, CursorQuery, RawSQL, ReadQuery, exists, find_one, paginate
-from core.errors import ensure, get_or_raise
+from core.db import CursorClause, CursorQuery, RawSQL, ReadQuery, exists, fetch_one, find_one, paginate
+from core.errors import Conflict, NotFound, ensure, get_or_raise
 from domain.conversations.specs import CONVERSATION_SETTINGS, CONVERSATIONS
+from domain.specs import ActionType
 from util.string_util import join_columns
 
 
@@ -113,5 +114,50 @@ def get_conversation_settings(conn: sqlite3.Connection, conversation_id: str) ->
         return None
     
     settings["compact_prompt"] = bool(settings["compact_prompt"]) if settings["compact_prompt"] is not None else None
-    
+
     return settings
+
+
+def has_import_action(conn: sqlite3.Connection, conversation_id: str) -> bool:
+    row = fetch_one(conn, 
+    RawSQL("""
+        SELECT 1 
+        FROM user_actions
+        WHERE conversation_id=:conversation_id 
+        AND action_type=:action_type
+        LIMIT 1
+        """
+    ), 
+    {
+        "conversation_id": conversation_id, 
+        "action_type": ActionType.IMPORT_COMMITTED
+    }
+    )
+    return row is not None
+
+
+def ensure_conversation_empty(conn: sqlite3.Connection, conversation_id: str) -> dict:
+    conversation = fetch_one(conn, 
+        RawSQL("""
+            SELECT c.*, p.character_id
+            FROM conversations c 
+            JOIN plots p 
+            ON p.id=c.plot_id
+            WHERE c.id=:conversation_id
+        """), 
+        {"conversation_id": conversation_id}
+    )
+    if conversation is None:
+        raise NotFound("conversation not found")
+    if conversation["user_profile_id"] is None:
+        raise Conflict("conversation has no user profile")
+    turn = fetch_one(conn, RawSQL("SELECT 1 FROM turns WHERE conversation_id=:conversation_id LIMIT 1"), {"conversation_id": conversation_id})
+    non_intro = fetch_one(conn, RawSQL("""
+        SELECT 1 FROM messages
+        WHERE conversation_id=:conversation_id
+          AND substr(id, 1, length(:intro_prefix)) <> :intro_prefix
+        LIMIT 1
+    """), {"conversation_id": conversation_id, "intro_prefix": f"intro_{conversation_id}_"})
+    if turn is not None or non_intro is not None:
+        raise Conflict("conversation is not empty")
+    return dict(conversation)

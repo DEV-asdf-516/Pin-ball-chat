@@ -124,6 +124,23 @@ class SetConversationTitleRequest(CamelModel):
     title: str | None = None
 
 
+class StartImportSessionRequest(CamelModel):
+    room_id: str = Field(alias="roomId")
+    expected_parts: int = Field(alias="expectedParts")
+    expected_messages: int = Field(alias="expectedMessages")
+    manifest: dict[str, Any] | None = None
+
+    def to_dict(self) -> dict:
+        return self.model_dump(by_alias=True)
+
+
+class UploadImportPartRequest(CamelModel):
+    messages: list[dict[str, Any]]
+
+    def to_dict(self) -> dict:
+        return self.model_dump(by_alias=True)
+
+
 class ChatRequest(GenerationParamsRequest):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -353,3 +370,36 @@ class ConversationSettingsResponse(BaseModel):
     adapter_id: str | None = None
     created_at: str
     updated_at: str
+
+
+class ImportSessionResponse(BaseModel):
+    sessionId: str
+    conversationId: str
+    roomId: str
+    expectedParts: int
+    expectedMessages: int
+    receivedParts: list[int]
+    receivedMessages: int
+    receivedBytes: int
+    warningCount: int
+    state: str
+    createdAt: str
+    lastActivityAt: str
+
+
+class UploadImportPartResponse(ImportSessionResponse):
+    partNumber: int
+    warnings: list[str]
+
+
+class CommitImportSessionResponse(BaseModel):
+    sessionId: str
+    conversationId: str
+    turnCount: int
+    messageCount: int
+    warnings: list[str]
+
+
+class DiscardImportSessionResponse(BaseModel):
+    sessionId: str
+    discarded: bool

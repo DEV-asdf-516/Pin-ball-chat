@@ -90,6 +90,22 @@ def create_app():
     )
 
     @app.middleware("http")
+    async def limit_import_request_body(request, call_next):
+        if "/sessions/" in request.url.path and "/parts/" in request.url.path:
+            limit = 10 * 1024 * 1024
+            content_length = request.headers.get("content-length")
+            if content_length is not None:
+                try:
+                    if int(content_length) > limit:
+                        return JSONResponse(status_code=413, content={"error": "request_too_large", "message": "request body exceeds 10MB"})
+                except ValueError:
+                    return JSONResponse(status_code=400, content={"error": "bad_request", "message": "invalid Content-Length"})
+            body = await request.body()
+            if len(body) > limit:
+                return JSONResponse(status_code=413, content={"error": "request_too_large", "message": "request body exceeds 10MB"})
+        return await call_next(request)
+
+    @app.middleware("http")
     async def reject_untrusted_origin(request, call_next):
         
         if not _is_local_network_host(request.headers.get("host", "")):

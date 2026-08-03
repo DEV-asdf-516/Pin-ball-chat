@@ -39,6 +39,18 @@ def session(connect_fn: Callable[[], sqlite3.Connection]) -> Generator[sqlite3.C
         conn.close()
 
 
+@contextmanager
+def immediate_transaction(conn: sqlite3.Connection) -> Generator[sqlite3.Connection]:
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield conn
+    except BaseException:
+        conn.rollback()
+        raise
+    else:
+        conn.commit()
+
+
 def init_db(conn: sqlite3.Connection, schema_ddl: str, table_names: list[str]) -> None:
     conn.executescript(schema_ddl)
     conn.commit()
