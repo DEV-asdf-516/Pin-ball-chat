@@ -61,9 +61,10 @@ class CodexRpcConnection:
 
     async def _read_events(self, process: "asyncio.subprocess.Process", epoch: int) -> None:
         reached_eof: bool = False
+        stream_broken: bool = False
         try:
             assert process.stdout
-            
+
             while line := await process.stdout.readline():
                 if not self._is_current(process, epoch):
                     return
@@ -136,8 +137,10 @@ class CodexRpcConnection:
             reached_eof = True
         except asyncio.CancelledError:
             raise
+        except ValueError:
+            stream_broken = True
         finally:
-            if self._is_current(process, epoch) and (reached_eof or process.returncode is not None):
+            if self._is_current(process, epoch) and (reached_eof or stream_broken or process.returncode is not None):
                 await self._report_failure(
                  process, epoch,
                  _runtime_error(
@@ -210,8 +213,7 @@ class CodexRpcConnection:
         self._pending_requests.clear()
 
     async def close(self) -> None:
-        # request ID는 epoch에 무관하게 단조 증가하므로 _ignored_response_ids는 여기서
-        # 비우지 않아도 안전하다 — 재사용되지 않는 ID라 다음 세대와 충돌하지 않는다.
+        # request ID는 epoch에 무관하게 단조 증가함
         tasks: list[asyncio.Task] = [task for task in self._reader_tasks if not task.done()]
         for task in tasks:
             task.cancel()

@@ -8,7 +8,7 @@ from ai.errors import EmptyOutputError, ProviderErrorCode, ProviderRuntimeError,
 from ai.protocol.claude_protocol import ClaudeTurnPhase, ClaudeTurnStateMachine, find_structure_violation
 from ai.runtime.queue import BoundedRuntimeQueue, RuntimeQueueBlockedError, RuntimeQueueClosed
 from ai.runtime.util import RUNTIME_UMASK, AsyncOnce, GenerationGate, ProcessOutput, decode_runtime_message, drain_stderr, reap_process_group, remaining_seconds, run_subprocess_capture, runtime_env
-from ai.settings import CLAUDE_COMMAND, CLAUDE_MAX_IN_FLIGHT, CLAUDE_MODELS, CLAUDE_RUNTIME_VERSION, PINBALLCHAT_RUNTIME_ROOT, RUNTIME_FIRST_DELTA_TIMEOUT, RUNTIME_IDLE_TIMEOUT, RUNTIME_INTERRUPT_GRACE_SECONDS, RUNTIME_QUEUE_BLOCK_SECONDS, RUNTIME_QUEUE_SIZE
+from ai.settings import CLAUDE_COMMAND, CLAUDE_MAX_IN_FLIGHT, CLAUDE_MODELS, CLAUDE_RUNTIME_VERSION, PINBALLCHAT_RUNTIME_ROOT, RUNTIME_FIRST_DELTA_TIMEOUT, RUNTIME_IDLE_TIMEOUT, RUNTIME_INTERRUPT_GRACE_SECONDS, RUNTIME_QUEUE_BLOCK_SECONDS, RUNTIME_QUEUE_SIZE, RUNTIME_STDOUT_LINE_LIMIT
 from ai.specs import GenerateRequest, ProviderName
 
 
@@ -146,6 +146,8 @@ class ClaudeCliRuntime:
                 except RuntimeQueueClosed:
                     # consumer가 이미 실패/취소를 관찰했으므로 조용히 종료.
                     return
+        except ValueError:
+            await queue.fail(_runtime_error(ProviderErrorCode.PROVIDER_RUNTIME_CRASHED, "claude runtime stdout line exceeded the buffer limit", retryable=True))
         finally:
             try:
                 await queue.close()
@@ -176,7 +178,7 @@ class ClaudeCliRuntime:
             command.extend(["--model", req.model])
         try:
             return await asyncio.wait_for(
-                asyncio.create_subprocess_exec(*command, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=str(scratch), env=_build_runtime_env(), start_new_session=True, umask=RUNTIME_UMASK),
+                asyncio.create_subprocess_exec(*command, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=str(scratch), env=_build_runtime_env(), start_new_session=True, umask=RUNTIME_UMASK, limit=RUNTIME_STDOUT_LINE_LIMIT),
                 timeout=remaining(),
             )
         except FileNotFoundError as exc:

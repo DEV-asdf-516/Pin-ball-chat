@@ -10,7 +10,7 @@ from ai.runtime.codex.connection import CodexRpcConnection
 from ai.runtime.codex.router import CodexTurnRouter
 from ai.runtime.queue import BoundedRuntimeQueue, RuntimeQueueClosed
 from ai.runtime.util import RUNTIME_UMASK, AsyncOnce, GenerationGate, drain_stderr, reap_process_group, remaining_seconds, run_subprocess_capture, runtime_env
-from ai.settings import CODEX_COMMAND, CODEX_MAX_IN_FLIGHT, CODEX_RUNTIME_VERSION, PINBALLCHAT_RUNTIME_ROOT, RUNTIME_FIRST_DELTA_TIMEOUT, RUNTIME_IDLE_TIMEOUT, RUNTIME_INTERRUPT_GRACE_SECONDS, RUNTIME_RESTART_BACKOFF_SECONDS
+from ai.settings import CODEX_COMMAND, CODEX_MAX_IN_FLIGHT, CODEX_RUNTIME_VERSION, PINBALLCHAT_RUNTIME_ROOT, RUNTIME_FIRST_DELTA_TIMEOUT, RUNTIME_IDLE_TIMEOUT, RUNTIME_INTERRUPT_GRACE_SECONDS, RUNTIME_RESTART_BACKOFF_SECONDS, RUNTIME_STDOUT_LINE_LIMIT
 from ai.specs import GenerateRequest, ProviderName
 from util.safe_util import get_safe_dict
 
@@ -369,6 +369,7 @@ class CodexAppServer:
                     env=_build_runtime_env(),
                     start_new_session=True,
                     umask=RUNTIME_UMASK,
+                    limit=RUNTIME_STDOUT_LINE_LIMIT,
                 )
             except FileNotFoundError as exc:
                 raise _runtime_error(
