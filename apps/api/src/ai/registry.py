@@ -1,5 +1,5 @@
 from ai.settings import DEFAULT_AI_PROVIDER, DEFAULT_NUM_CTX, DEFAULT_NUM_PREDICT
-from ai.specs import GenerateRequest, ProviderName
+from ai.specs import GenerateRequest, PromptTier, ProviderName
 from ai.providers.base import AIProvider
 from ai.providers.anthropic import AnthropicProvider
 from ai.providers.claude_cli import ClaudeCliProvider
@@ -36,6 +36,13 @@ def resolve_provider(provider_name: str | None = None, model: str = "local-stub"
         raise ValueError(f"unknown ai provider: {name}")
 
     return provider
+
+
+def prompt_tier(provider_name: str | None, model: str) -> PromptTier:
+    resolved: ProviderName = resolve_provider(provider_name, model).name
+    if resolved in (ProviderName.OLLAMA, ProviderName.LOCAL_STUB):
+        return PromptTier.LOCAL
+    return PromptTier.EXTERNAL
 
 
 def runtime_params(req: GenerateRequest, provider_name: str | None = None, fallback_applied: bool = False) -> dict:

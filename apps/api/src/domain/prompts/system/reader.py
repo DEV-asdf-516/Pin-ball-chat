@@ -2,8 +2,9 @@ import json
 import re
 import sqlite3
 from dataclasses import dataclass
+from pathlib import Path
 
-from ai.specs import Message
+from ai.specs import Message, PromptTier
 from core.db import DATA_ROOT, RawSQL, fetch_all
 from domain.conversations.reader import active_messages_sql
 from domain.prompts.context import RECENT_WINDOW, build_ctx, described, render_value, resolve_prompt_context, row_json, tag
@@ -15,13 +16,16 @@ _OOC_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-_SYSTEM_PROMPT_PATH = DATA_ROOT / "rules" / "system_prompt.json"
+_SYSTEM_PROMPT_PATHS: dict[PromptTier, Path] = {
+    PromptTier.EXTERNAL: DATA_ROOT / "rules" / "system_prompt.json",
+    PromptTier.LOCAL: DATA_ROOT / "rules" / "system_prompt.local.json",
+}
 
 
-def _system_prompt() -> dict:
+def _system_prompt(tier: PromptTier) -> dict:
     # 매 호출마다 파일을 다시 읽는다 — 모듈 임포트 시점에 캐싱하면 파일을 고쳐도 프로세스 재시작 전까진 반영이 안 된다.
     # 이 파일은 몇 KB짜리라 매번 읽어도 비용이 무시할 만하다.
-    return json.loads(_SYSTEM_PROMPT_PATH.read_text(encoding="utf-8"))
+    return json.loads(_SYSTEM_PROMPT_PATHS[tier].read_text(encoding="utf-8"))
 
 
 @dataclass
@@ -112,11 +116,11 @@ def snapshot_text(system: str, messages: list[Message]) -> str:
     return system + "\n\n" + "\n".join(f"{m.role}: {m.content}" for m in messages)
 
 
-def build_prompt(conn: sqlite3.Connection, conversation_id: str, user_message: str, exclude_turn_id: str | None = None) -> BuiltPrompt:
+def build_prompt(conn: sqlite3.Connection, conversation_id: str, user_message: str, exclude_turn_id: str | None = None, tier: PromptTier = PromptTier.EXTERNAL) -> BuiltPrompt:
     # system_prompt.json에 정의된 관찰자 프롬프트 골격 위에, 이 conversation의 캐릭터/유저/플롯 데이터를 채워 넣는다.
     # TODO: preferences.json을 로어북처럼 쓰는 방식으로 나중에 다시 연결한다.
 
-    system_prompt: dict = _system_prompt()
+    system_prompt: dict = _system_prompt(tier)
     conv, plot, char, user = resolve_prompt_context(conn, conversation_id)
     char_json: dict = row_json(char, "profile_json")
     user_json: dict = row_json(user, "profile_json")

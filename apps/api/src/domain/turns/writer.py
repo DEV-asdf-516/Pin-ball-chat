@@ -3,8 +3,8 @@ import json
 import sqlite3
 from dataclasses import dataclass
 
-from ai.registry import runtime_params
-from ai.specs import GenerateRequest
+from ai.registry import prompt_tier, runtime_params
+from ai.specs import GenerateRequest, PromptTier
 from core.db import Bind, In, Ne, ReadQuery, RawSQL, WriteQuery, delete, fetch_one, find_all, find_one, insert, new_id, select_cols, update
 from core.errors import Conflict, ensure, get_or_raise
 from domain.prompts.system.reader import BuiltPrompt, build_prompt, snapshot_text
@@ -153,13 +153,14 @@ def start_regeneration(conn: sqlite3.Connection, prepared: PreparedGeneration) -
     _record_user_action(conn, action)
 
 
-def prepare_chat_stream(conn: sqlite3.Connection, conversation_id: str, message: str) -> PreparedGeneration:
+def prepare_chat_stream(conn: sqlite3.Connection, conversation_id: str, message: str, params: GenerationParams) -> PreparedGeneration:
     ts: str = utc_now_string()
     msg_id: str = new_id("msg")
     turn_id: str = new_id("turn")
 
-    built: BuiltPrompt = build_prompt(conn, conversation_id, message)
-
+    tier: PromptTier = prompt_tier(params.provider_name, params.model)
+    built: BuiltPrompt = build_prompt(conn, conversation_id, message, tier=tier)
+    
     return PreparedGeneration(
         conversation_id=conversation_id,
         turn_id=turn_id,
@@ -171,7 +172,7 @@ def prepare_chat_stream(conn: sqlite3.Connection, conversation_id: str, message:
     )
 
 
-def prepare_regenerate_stream(conn: sqlite3.Connection, turn_id: str) -> PreparedGeneration:
+def prepare_regenerate_stream(conn: sqlite3.Connection, turn_id: str, params: GenerationParams) -> PreparedGeneration:
     turn_row: dict | None = find_one(conn, ReadQuery.by_id(TURNS, turn_id))
     turn: dict = get_or_raise(turn_row, "turn not found")
 
@@ -210,7 +211,8 @@ def prepare_regenerate_stream(conn: sqlite3.Connection, turn_id: str) -> Prepare
         current_generation_id = current["id"] if current else None
 
     user_message: str = find_one(conn, ReadQuery.by_id(MESSAGES, turn["user_message_id"]))["content"]
-    built: BuiltPrompt = build_prompt(conn, turn["conversation_id"], user_message, exclude_turn_id=turn_id)
+    tier: PromptTier = prompt_tier(params.provider_name, params.model)
+    built: BuiltPrompt = build_prompt(conn, turn["conversation_id"], user_message, exclude_turn_id=turn_id, tier=tier)
 
     return PreparedGeneration(
         conversation_id=turn["conversation_id"],
@@ -231,7 +233,8 @@ def choose_generation(conn: sqlite3.Connection, generation_id: str) -> dict:
                "selected_generation_id": generation_id,
                 "updated_at": utc_now_string()
            }),
-           Bind({"id": gen["turn_id"]})))
+           Bind({"id": gen["turn_id"]}))
+    )
     update(conn, WriteQuery(GENERATIONS, Bind({"selected": 0}), Bind({"turn_id": gen["turn_id"]})))
     update(conn, WriteQuery(GENERATIONS, Bind({"rejected": 1}), Bind({"turn_id": gen["turn_id"], "id": Ne(generation_id)})))
     update(conn, WriteQuery(GENERATIONS, Bind({"selected": 1, "rejected": 0}), Bind({"id": generation_id})))

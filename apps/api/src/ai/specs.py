@@ -16,6 +16,11 @@ class ProviderName(StrEnum):
         return tuple(p for p in cls if p is not cls.LOCAL_STUB)
 
 
+class PromptTier(StrEnum):
+    EXTERNAL = "external"
+    LOCAL = "local"
+
+
 @dataclass
 class Message:
     role: str

@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 
 from core.db import connect, session
 from domain.prompts.summary.writer import maybe_update_summary
+from domain.specs import GenerationParams
 from domain.turns.reader import list_turn_generations
 from domain.turns.writer import choose_generation, delete_message, delete_messages, edit_generation, edit_user_message, prepare_chat_stream, prepare_regenerate_stream
 from domain.turns.streaming import stream_response
@@ -17,27 +18,31 @@ router = APIRouter()
 def post_chat_stream(body: ChatRequest):
     # prepare_chat_stream()은 읽기 전용이라, 요청 전체(=스트리밍 끝날 때까지) 물려있는
     # DbConn 대신 여기서 짧게 열었다 바로 닫는 별도 커넥션을 쓴다.
+    params: GenerationParams = body.to_params()
     with session(connect) as conn:
-        prepared = prepare_chat_stream(conn, body.conversation_id, body.message)
+        prepared = prepare_chat_stream(conn, body.conversation_id, body.message, params)
     background_tasks = BackgroundTasks()
 
     def after_success():
         background_tasks.add_task(maybe_update_summary, prepared.conversation_id)
 
-    return StreamingResponse(stream_response(prepared, body.to_params(), after_success), media_type="text/event-stream", background=background_tasks, headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    return StreamingResponse(stream_response(prepared, params, after_success), media_type="text/event-stream", background=background_tasks, headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @router.post("/api/turns/{turn_id}/regenerate/stream", description="Returns Server-Sent Events. Use curl -N or browser fetch streaming client.")
 def post_regenerate_stream(turn_id: str, body: RegenerateRequest | None = None):
     body = body or RegenerateRequest()
+    params: GenerationParams = body.to_params()
+    
     with session(connect) as conn:
-        prepared = prepare_regenerate_stream(conn, turn_id)
+        prepared = prepare_regenerate_stream(conn, turn_id, params)
+    
     background_tasks = BackgroundTasks()
 
     def after_success():
         background_tasks.add_task(maybe_update_summary, prepared.conversation_id)
 
-    return StreamingResponse(stream_response(prepared, body.to_params(), after_success), media_type="text/event-stream", background=background_tasks, headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    return StreamingResponse(stream_response(prepared, params, after_success), media_type="text/event-stream", background=background_tasks, headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @router.get("/api/turns/{turn_id}/generations", response_model=TurnGenerationsResponse)
