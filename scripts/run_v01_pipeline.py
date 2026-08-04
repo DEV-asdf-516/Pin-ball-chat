@@ -15,6 +15,7 @@ os.environ["DB_PATH"] = str(Path(_tmp.name) / "pinballchat.sqlite")
 from core.db import connect, init_db
 from domain.catalog.importer import import_catalog
 from domain.conversations.writer import create_conversation
+from ai.specs import PromptTier
 from domain.specs import GenerationParams
 from domain.turns.writer import choose_generation, edit_generation, prepare_chat_stream, prepare_regenerate_stream
 from domain.turns.streaming import stream_response
@@ -51,11 +52,11 @@ async def main():
     params = GenerationParams()
 
     with connect() as conn:
-        prepared = prepare_chat_stream(conn, conv["conversationId"], "문 앞에 섰어.")
+        prepared = prepare_chat_stream(conn, conv["conversationId"], "문 앞에 섰어.", params)
     first = await _drain_stream(prepared, params)
 
     with connect() as conn:
-        prepared = prepare_regenerate_stream(conn, first["turnId"])
+        prepared = prepare_regenerate_stream(conn, first["turnId"], params)
     second = await _drain_stream(prepared, params)
 
     with connect() as conn:
@@ -64,7 +65,7 @@ async def main():
 
     with connect() as conn:
         # regenerate로 rejected된 assistant 메시지가 messages 배열에 안 섞이는지
-        built_check = build_prompt(conn, conv["conversationId"], "확인용")
+        built_check = build_prompt(conn, conv["conversationId"], "확인용", tier=PromptTier.LOCAL)
         roles = [m.role for m in built_check.messages]
         for a, b in zip(roles, roles[1:]):
             assert not (a == "assistant" and b == "assistant"), f"연속된 assistant 메시지 발견 (rejected 필터 실패): {roles}"
