@@ -10,7 +10,7 @@ from core.db import DATA_ROOT, Bind, RawSQL, ReadQuery, WriteQuery, connect, fet
 from domain.conversations.reader import active_messages_sql
 from domain.conversations.specs import CONVERSATIONS
 from domain.prompts.context import RECENT_WINDOW, SUMMARY_TRIGGER, build_ctx, described, render_value, resolve_prompt_context
-from domain.prompts.summary.chunks import render_summary_dialogue, smaller_summary_chunk_char_limit, summary_chunk_char_limit, take_summary_chunk
+from domain.prompts.summary.chunks import drop_ooc_only_turns, render_summary_dialogue, smaller_summary_chunk_char_limit, summary_chunk_char_limit, take_summary_chunk
 from domain.specs import GenerationParams
 from util.safe_util import get_safe_str, parse_json_dict
 from util.time_util import utc_now_string
@@ -40,14 +40,14 @@ async def maybe_update_summary(conversation_id: str) -> None:
 
             active: list[sqlite3.Row] = fetch_all(
                 conn,
-                RawSQL(active_messages_sql(("m.rowid", "m.role", "m.content"), order="ASC")),
+                RawSQL(active_messages_sql(("m.rowid", "m.role", "m.content", "m.turn_id"), order="ASC")),
                 {"conversation_id": conversation_id},
             )
             older: list[sqlite3.Row] = active[:-RECENT_WINDOW] if len(active) > RECENT_WINDOW else []
             through_rowid: int = conv["summary_through_rowid"] or 0
-            
-            pending: list[sqlite3.Row] = [message for message in older if message["rowid"] > through_rowid]
-            
+
+            pending: list[sqlite3.Row] = drop_ooc_only_turns([message for message in older if message["rowid"] > through_rowid])
+
             if len(pending) < SUMMARY_TRIGGER:
                 return None
 

@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 
 from ai.specs import ProviderName
+from domain.prompts.system.reader import extract_ooc
 
 
 DEFAULT_SUMMARY_CHUNK_CHAR_LIMIT = 70_000
@@ -24,6 +25,19 @@ def smaller_summary_chunk_char_limit(current_limit: int, failed_chars: int) -> i
 def render_summary_message(message, user_name: str) -> str:
     content: str = str(message["content"] or "")
     return f"{user_name}: {content}" if message["role"] == "user" else content
+
+
+def drop_ooc_only_turns(messages: Sequence) -> list:
+    # OOC 내용만 있는 user 턴은 스토리 진행이 아니라 생성 제어 요청이므로, 그 요청과
+    # 그에 대한 assistant 응답(같은 turn_id)을 통째로 요약 대상에서 제외한다.
+    ooc_only_turn_ids: set = set()
+    for message in messages:
+        if message["role"] != "user" or message["turn_id"] is None:
+            continue
+        body, ooc = extract_ooc(str(message["content"] or ""))
+        if ooc and not body.strip():
+            ooc_only_turn_ids.add(message["turn_id"])
+    return [message for message in messages if message["turn_id"] not in ooc_only_turn_ids]
 
 
 def take_summary_chunk(messages: Sequence, user_name: str, char_limit: int) -> list:

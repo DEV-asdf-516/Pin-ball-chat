@@ -10,6 +10,7 @@ from core.db.sqlite import connect as _sqlite_connect, init_db
 from domain.prompts.summary.chunks import (
     DEFAULT_SUMMARY_CHUNK_CHAR_LIMIT,
     OLLAMA_SUMMARY_CHUNK_CHAR_LIMIT,
+    drop_ooc_only_turns,
     render_summary_dialogue,
     smaller_summary_chunk_char_limit,
     summary_chunk_char_limit,
@@ -50,6 +51,19 @@ class SummaryChunkTests(unittest.TestCase):
         self.assertEqual(summary_chunk_char_limit(ProviderName.OLLAMA), OLLAMA_SUMMARY_CHUNK_CHAR_LIMIT)
         self.assertEqual(summary_chunk_char_limit(ProviderName.CLAUDE_CLI), DEFAULT_SUMMARY_CHUNK_CHAR_LIMIT)
         self.assertEqual(summary_chunk_char_limit(ProviderName.OPENAI_CODEX), DEFAULT_SUMMARY_CHUNK_CHAR_LIMIT)
+
+    def test_drop_ooc_only_turns_removes_request_and_response_together(self):
+        messages = [
+            {"rowid": 1, "role": "user", "content": "[OOC: 다음 장면은 짧게]", "turn_id": "turn-1"},
+            {"rowid": 2, "role": "assistant", "content": "짧아진 응답", "turn_id": "turn-1"},
+            {"rowid": 3, "role": "user", "content": "안녕 OOC: 존댓말로", "turn_id": "turn-2"},
+            {"rowid": 4, "role": "assistant", "content": "네 안녕하세요", "turn_id": "turn-2"},
+            {"rowid": 5, "role": "assistant", "content": "인트로", "turn_id": None},
+        ]
+
+        kept = drop_ooc_only_turns(messages)
+
+        self.assertEqual([message["rowid"] for message in kept], [3, 4, 5])
 
     def test_failed_chunk_limit_reduces_but_stays_positive(self):
         self.assertEqual(smaller_summary_chunk_char_limit(70_000, 60_000), 30_000)
@@ -138,6 +152,45 @@ class SummaryWriterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state["summary_text"], "summary-3")
         self.assertEqual(state["summary_through_rowid"], rowids[-1])
         self.assertNotIn("second", requests[0].messages[0].content)
+
+    async def test_ooc_only_turn_is_excluded_from_summary_prompt(self):
+        rows = [
+            ("user", "OOC: 다음 장면은 시점 전환", "turn-ooc"),
+            ("assistant", "ooc-reply", "turn-ooc"),
+            ("assistant", "story-line", None),
+            ("assistant", "(recent, excluded)", None),
+        ]
+        rowids: list[int] = []
+        with self._connect() as conn:
+            for role, content, turn_id in rows:
+                cursor = conn.execute(
+                    "INSERT INTO messages (id, conversation_id, role, content, turn_id, created_at) VALUES (?,?,?,?,?,?)",
+                    (new_id("msg"), "conv-1", role, content, turn_id, "t"),
+                )
+                rowids.append(cursor.lastrowid)
+            conn.commit()
+        requests = []
+
+        def _stream_text(req, provider_name):
+            requests.append(req)
+            return _tokens("summary-1")
+
+        with (
+            patch.object(writer, "connect", self._connect),
+            patch.object(writer, "RECENT_WINDOW", self._RECENT_WINDOW),
+            patch.object(writer, "SUMMARY_TRIGGER", 1),
+            patch.object(writer, "stream_text", _stream_text),
+        ):
+            await writer.maybe_update_summary("conv-1")
+
+        state = self._summary_state()
+        self.assertEqual(len(requests), 1)
+        prompt_body = requests[0].messages[0].content
+        self.assertIn("story-line", prompt_body)
+        self.assertNotIn("시점 전환", prompt_body)
+        self.assertNotIn("ooc-reply", prompt_body)
+        self.assertEqual(state["summary_text"], "summary-1")
+        self.assertEqual(state["summary_through_rowid"], rowids[2])
 
     async def test_failed_later_chunk_keeps_completed_progress(self):
         rowids = self._insert_pending_messages(["first", "second", "third"])

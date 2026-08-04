@@ -23,7 +23,7 @@
 ## (CLAUDE) API
 - [x] 카탈로그 목록 API 페이징 추가 (`/api/plots`, `/api/characters`, `/api/user-profiles`, `/api/preference-profiles`)
 - [x] 대화 롤링 요약 (5턴마다 오래된 메시지를 요약으로 압축해 `<summary>`로 프롬프트에 주입, 채팅 응답 전송 후 백그라운드로 갱신)
-- [ ] 롤링 요약 프롬프트 구성 시 `OOC:` 내용만 있는 user 턴은 요약 대상에서 제외
+- [x] 롤링 요약 프롬프트 구성 시 `OOC:` 내용만 있는 user 턴(그 턴의 assistant 응답 포함)은 요약 대상에서 제외
 - [x] 빈 입력 전개 요청(`message: ""`)을 user message로 저장하지 않고 전개 요청으로 처리 (row 자체는 turns FK 때문에 남지만, 대화 이력·요약 대상에서는 제외)
 - [x] 플롯 인트로(시작 장면) — `plot_json.intro.blocks`(assistant/user 2타입)를 유저 프로필 확정 시점에 실제 messages row로 materialize (`docs/intro-final.md`). 별도 introMessages API 없이 기존 메시지 목록/프롬프트 히스토리/롤링 요약이 그대로 처리
 - [x] 이미지 업로드 엔드포인트 (`POST /api/uploads/{kind}/{item_id}`, multipart, `data/uploads/{kind}/{id}.{ext}`에 저장 후 `avatarUrl`을 catalog item에 반영, `/uploads`로 정적 서빙). 프론트도 제작·수정 시 이 엔드포인트 사용
