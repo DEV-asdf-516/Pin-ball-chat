@@ -21,11 +21,18 @@ class CatalogSpec(TableSpec):
 
 CATALOG_SPECS = [
     CatalogSpec(
+        dirname="plots",
+        table="plots",
+        kind=CatalogKind.PLOT,
+        source_format="md",
+        columns=("id", "title", "plot_json", "source_format", "source_text", "created_at", "updated_at"),
+    ),
+    CatalogSpec(
         dirname="characters",
         table="characters",
         kind=CatalogKind.CHARACTER,
         source_format="md",
-        columns=("id", "name", "profile_json", "source_format", "source_text", "created_at", "updated_at"),
+        columns=("id", "name", "plot_id", "sort_order", "profile_json", "source_format", "source_text", "created_at", "updated_at"),
     ),
     CatalogSpec(
         dirname="user_profiles",
@@ -33,13 +40,6 @@ CATALOG_SPECS = [
         kind=CatalogKind.USER_PROFILE,
         source_format="md",
         columns=("id", "name", "profile_json", "source_format", "source_text", "created_at", "updated_at"),
-    ),
-    CatalogSpec(
-        dirname="plots",
-        table="plots",
-        kind=CatalogKind.PLOT,
-        source_format="md",
-        columns=("id", "title", "character_id", "plot_json", "source_format", "source_text", "created_at", "updated_at"),
     ),
     CatalogSpec(
         dirname="preferences",
@@ -56,14 +56,14 @@ SPEC_BY_KIND: dict[CatalogKind, CatalogSpec] = {spec.kind: spec for spec in CATA
 # 어떤 kind를 지우려 할 때, 어떤 kind의 어떤 컬럼이 그 id를 참조하고 있는지 확인해야 하는지 선언한다.
 # kind가 늘어나도 여기 항목만 추가하면 되고, delete_catalog_item의 분기는 늘어나지 않는다.
 REFERENCED_BY: dict[CatalogKind, tuple[tuple[CatalogKind, str], ...]] = {
-    CatalogKind.CHARACTER: ((CatalogKind.PLOT, "character_id"),),
+    CatalogKind.CHARACTER: (),
 }
 
 # 이 kind의 payload가 다른 kind를 참조하는 필드들을 선언한다: (참조 대상 kind, payload attribute명).
 # writer._validate_references와 importer의 의존성 로딩 순서가 이 하나의 선언을 공유한다.
 FORWARD_REFS: dict[CatalogKind, tuple[tuple[CatalogKind, str], ...]] = {
-    CatalogKind.PLOT: (
-        (CatalogKind.CHARACTER, "character_id"),
+    CatalogKind.CHARACTER: (
+        (CatalogKind.PLOT, "plot_id"),
     ),
 }
 
@@ -87,12 +87,18 @@ class CatalogPayload:
 @dataclass
 class CharacterData(CatalogPayload):
     source_text: str
+    plot_id: str = ""
+    sort_order: int = 0
     name: str | None = None
     display_name: str | None = None
 
     @property
     def columns(self) -> dict:
-        return {"name": self.name or self.id}
+        return {
+            "name": self.name or self.id,
+            "plot_id": self.plot_id,
+            "sort_order": self.sort_order,
+        }
 
 
 @dataclass
@@ -108,7 +114,6 @@ class UserProfileData(CatalogPayload):
 
 @dataclass
 class PlotData(CatalogPayload):
-    character_id: str
     source_text: str
     title: str | None = None
     genre: list[str] = field(default_factory=list)
@@ -116,7 +121,7 @@ class PlotData(CatalogPayload):
 
     @property
     def columns(self) -> dict:
-        return {"title": self.title or self.id, "character_id": self.character_id}
+        return {"title": self.title or self.id}
 
     @property
     def json_column(self) -> str:

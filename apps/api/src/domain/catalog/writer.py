@@ -7,7 +7,7 @@ from core.db import DATA_ROOT, Bind, WriteQuery, delete, upsert
 from core.errors import ensure
 from domain.catalog.reader import is_catalog_exists, find_catalog_by_id
 from domain.catalog.specs import FORWARD_REFS, REFERENCED_BY, SPEC_BY_KIND, CatalogKind, CatalogPayload, CatalogSpec, parse_catalog_data
-from util.catalog_util import LoadedCatalog, write_catalog_file
+from util.catalog_util import LoadedCatalog, load_catalog_file, write_catalog_file
 from util.safe_util import get_safe_list, get_safe_tuple
 from util.time_util import utc_now_string
 
@@ -36,9 +36,17 @@ def _validate_intro(data: dict) -> None:
             raise ValueError("intro block content must not be empty")
 
 
-def _file_path(kind: CatalogKind, item_id: str, root: Path) -> Path:
+def catalog_file_path(kind: CatalogKind, item_id: str, root: Path) -> Path:
     spec: CatalogSpec = SPEC_BY_KIND[kind]
     return root / spec.dirname / f"{item_id}.{spec.source_format}"
+
+
+def catalog_file_paths(kind: CatalogKind, item_id: str, root: Path) -> tuple[Path, Path]:
+    spec: CatalogSpec = SPEC_BY_KIND[kind]
+    return (
+        root / spec.dirname / f"{item_id}.md",
+        root / spec.dirname / f"{item_id}.json",
+    )
 
 
 def upsert_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, payload: CatalogPayload, catalog: LoadedCatalog) -> None:
@@ -66,9 +74,9 @@ def create_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, data: dict,
     
     _validate_id(row_id)
     
-    path: Path = _file_path(kind, row_id, root)
+    path: Path = catalog_file_path(kind, row_id, root)
     
-    if path.exists():
+    if any(candidate.exists() for candidate in catalog_file_paths(kind, row_id, root)):
         raise ValueError(f"{kind} {row_id} already exists")
 
     if kind == CatalogKind.PLOT:
@@ -100,12 +108,16 @@ def update_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, item_id: st
 
     data = {**data, "id": item_id}
 
-    path: Path = _file_path(kind, item_id, root)
+    path: Path = catalog_file_path(kind, item_id, root)
 
     item_found: bool = path.exists()
     ensure(item_found, f"{kind} {item_id} not found")
 
     previous_text: str = path.read_text(encoding="utf-8")
+
+    if kind == CatalogKind.CHARACTER:
+        previous_catalog: LoadedCatalog = load_catalog_file(path)
+        data = {**previous_catalog.data, **data}
 
     if kind == CatalogKind.PLOT:
         _validate_intro(data)
@@ -134,7 +146,6 @@ def update_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, item_id: st
 def delete_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, item_id: str, root: Path = DATA_ROOT) -> dict:
     _validate_id(item_id)
     spec: CatalogSpec = SPEC_BY_KIND[kind]
-    path: Path = _file_path(kind, item_id, root)
 
     item_found: bool = is_catalog_exists(conn, kind, item_id)
     ensure(item_found, f"{kind} {item_id} not found")
@@ -145,7 +156,7 @@ def delete_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, item_id: st
 
     delete(conn, WriteQuery.by_id(spec, item_id))
 
-    if path.exists():
-        path.unlink()
+    for catalog_path in catalog_file_paths(kind, item_id, root):
+        catalog_path.unlink(missing_ok=True)
 
     return {"id": item_id, "deleted": True}

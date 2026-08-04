@@ -1,5 +1,6 @@
 import { api, apiBase } from "./api.js";
 import { conversationDeleted, conversationsLoaded, conversationTitleChanged } from "./actions.js";
+import { firstPlotCharacter } from "./catalog.js";
 import { $, el, parseJson, setChildren } from "./dom.js";
 import { loadCursorPage } from "./paging.js";
 import { state, subscribe } from "./state.js";
@@ -12,6 +13,7 @@ export function bindConversationSubscriptions() {
   subscribe("conversations", renderConversations);
   subscribe("catalog.users", renderConversations);
   subscribe("catalog.plots", renderConversations);
+  subscribe("catalog.chars", renderConversations);
 }
 
 export async function loadConversations(reset = true) {
@@ -71,7 +73,7 @@ function conversationText(conv) {
 
 function conversationCard(conv) {
   const plot = state.catalog.plots.byId.get(conv.plotId);
-  const character = state.catalog.chars.byId.get(plot?.character_id);
+  const character = firstPlotCharacter(plot);
   const user = state.catalog.users.byId.get(conv.userProfileId);
   const title = conv.title || plot?.title || "제목 없는 대화";
   return el("article", { className: "card conversation-card", dataset: { conversation: conv.id } }, [

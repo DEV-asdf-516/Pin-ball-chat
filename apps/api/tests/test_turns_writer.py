@@ -13,12 +13,12 @@ from domain.turns.writer import create_user_turn, record_generation_output
 
 def _seed_conversation(conn) -> None:
     conn.execute(
-        "INSERT INTO characters (id, name, profile_json, created_at, updated_at) VALUES (?,?,?,?,?)",
-        ("char-1", "char", "{}", "t", "t"),
+        "INSERT INTO plots (id, title, plot_json, created_at, updated_at) VALUES (?,?,?,?,?)",
+        ("plot-1", "plot", "{}", "t", "t"),
     )
     conn.execute(
-        "INSERT INTO plots (id, title, character_id, plot_json, created_at, updated_at) VALUES (?,?,?,?,?,?)",
-        ("plot-1", "plot", "char-1", "{}", "t", "t"),
+        "INSERT INTO characters (id, name, plot_id, sort_order, profile_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+        ("char-1", "char", "plot-1", 0, "{}", "t", "t"),
     )
     conn.execute(
         "INSERT INTO user_profiles (id, name, profile_json, created_at, updated_at) VALUES (?,?,?,?,?)",

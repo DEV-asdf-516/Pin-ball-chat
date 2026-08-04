@@ -56,6 +56,7 @@ export async function createPlot(data) {
     body: JSON.stringify(data),
   });
   await loadCatalogKind("plots", true);
+  await loadCatalogKind("chars", true);
   return plot;
 }
 
@@ -84,6 +85,14 @@ export async function updateCharacter(id, data) {
   return character;
 }
 
+export async function deleteCharacter(id) {
+  const result = await api(`/api/characters/${encodeURIComponent(id)}`, { method: "DELETE" });
+  state.catalog.chars.byId.delete(id);
+  state.catalog.chars.order = state.catalog.chars.order.filter((characterId) => characterId !== id);
+  notify("catalog.chars");
+  return result;
+}
+
 export async function uploadCharacterAvatar(id, file) {
   const character = await uploadFile(`/api/uploads/character/${encodeURIComponent(id)}`, file);
   upsertCatalogItem("chars", character);
@@ -103,13 +112,30 @@ export async function deletePlot(id) {
   const result = await api(`/api/plots/${encodeURIComponent(id)}`, { method: "DELETE" });
   state.catalog.plots.byId.delete(id);
   state.catalog.plots.order = state.catalog.plots.order.filter((plotId) => plotId !== id);
+  for (const character of plotCharacters({ id })) {
+    state.catalog.chars.byId.delete(character.id);
+    state.catalog.chars.order = state.catalog.chars.order.filter((characterId) => characterId !== character.id);
+  }
   notify("catalog.plots");
+  notify("catalog.chars");
   renderPlots();
   return result;
 }
 
 export function findPlot(id) {
   return state.catalog.plots.byId.get(id) || null;
+}
+
+export function plotCharacters(plot) {
+  if (!plot?.id) return [];
+  return state.catalog.chars.order
+    .map((id) => state.catalog.chars.byId.get(id))
+    .filter((character) => character && (character.plot_id === plot.id || character.plotId === plot.id))
+    .sort((left, right) => (left.sort_order ?? left.sortOrder ?? 0) - (right.sort_order ?? right.sortOrder ?? 0));
+}
+
+export function firstPlotCharacter(plot) {
+  return plotCharacters(plot)[0] || null;
 }
 
 export function renderPlots() {
@@ -133,14 +159,20 @@ function plotGenre(plot) {
 }
 
 function plotHaystack(plot) {
-  const char = state.catalog.chars.byId.get(plot.character_id);
+  const characters = plotCharacters(plot);
   const genre = plotGenre(plot).join(" ");
   const source = plot.source_text || "";
-  return [plot.title, plot.id, char?.name, char?.id, genre, source].filter(Boolean).join(" ").toLowerCase();
+  return [
+    plot.title,
+    plot.id,
+    ...characters.flatMap((character) => [character.name, character.id]),
+    genre,
+    source,
+  ].filter(Boolean).join(" ").toLowerCase();
 }
 
 function plotCard(plot) {
-  const char = state.catalog.chars.byId.get(plot.character_id);
+  const char = firstPlotCharacter(plot);
   const genres = plotGenre(plot);
   return el("button", { className: "card plot-card", dataset: { plot: plot.id } }, [
     el("div", { className: "plot-card-media" }, [
@@ -157,7 +189,7 @@ function plotCard(plot) {
 
 function renderDetail() {
   const plot = state.selectedPlot;
-  const char = state.catalog.chars.byId.get(plot.character_id);
+  const characters = plotCharacters(plot);
   setChildren($("plotDetail"), [
     el("section", {}, [
       el("h2", { text: plot.title || "제목 없는 플롯" }),
@@ -165,16 +197,20 @@ function renderDetail() {
     ]),
     el("section", {}, [
       el("h3", { text: "캐릭터 정보" }),
-      el("div", { className: "card detail-character-card" }, [
-        characterAvatar(char, "detail-character-image"),
-        el("div", { className: "detail-character-summary" }, [
-          el("div", {}, [
-            el("strong", { text: characterName(char) || "캐릭터" }),
-            el("div", { className: "meta", text: char ? "플롯 캐릭터" : "캐릭터 정보를 불러오는 중..." }),
-          ]),
-        ]),
-        el("div", { className: "source character-source", text: char?.source_text || "캐릭터 정보를 찾지 못했습니다." }),
-      ]),
+      ...(
+        characters.length
+          ? characters.map((character) => el("div", { className: "card detail-character-card" }, [
+            characterAvatar(character, "detail-character-image"),
+            el("div", { className: "detail-character-summary" }, [
+              el("div", {}, [
+                el("strong", { text: characterName(character) || "캐릭터" }),
+                el("div", { className: "meta", text: "플롯 캐릭터" }),
+              ]),
+            ]),
+            el("div", { className: "source character-source", text: character.source_text || "캐릭터 정보를 찾지 못했습니다." }),
+          ]))
+          : [el("div", { className: "empty", text: "캐릭터 정보를 불러오는 중..." })]
+      ),
     ]),
     el("section", { className: "plot-source-section" }, [
       el("h3", { text: "플롯 내용" }),
@@ -184,12 +220,11 @@ function renderDetail() {
 }
 
 async function ensureSelectedPlotCharacter() {
-  const characterId = state.selectedPlot?.character_id;
-  if (!characterId || state.catalog.chars.byId.has(characterId)) return;
+  if (plotCharacters(state.selectedPlot).length) return;
   try {
-    await loadCharacter(characterId);
+    await loadCatalogKind("chars", true);
   } catch {
-    // 상세 화면에서는 플롯 자체를 막지 않고, 캐릭터 ID fallback만 보여준다.
+    // 상세 화면에서는 플롯 자체를 막지 않고, 캐릭터 정보 없이 본문을 보여준다.
   }
 }
 

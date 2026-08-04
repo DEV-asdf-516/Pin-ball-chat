@@ -51,6 +51,38 @@ def immediate_transaction(conn: sqlite3.Connection) -> Generator[sqlite3.Connect
         conn.commit()
 
 
+@contextmanager
+def nested_transaction(conn: sqlite3.Connection) -> Generator[sqlite3.Connection]:
+    # conn이 이미 트랜잭션 중이면(예: 상위 호출자가 immediate_transaction 사용 중) BEGIN을 또
+    # 할 수 없으므로 SAVEPOINT로 중첩한다. 트랜잭션 밖이면 immediate_transaction과 동일하게 동작.
+    if not conn.in_transaction:
+        with immediate_transaction(conn):
+            yield conn
+        return
+
+    savepoint: str = f"sp_{uuid.uuid4().hex}"
+    conn.execute(f"SAVEPOINT {savepoint}")
+    try:
+        yield conn
+    except BaseException:
+        conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+        conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+        raise
+    else:
+        conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+
+
+@contextmanager
+def transaction_with_rollback(conn: sqlite3.Connection, on_failure: Callable[[], None]) -> Generator[sqlite3.Connection]:
+    # DB 트랜잭션과 별도로 되돌려야 하는 부수효과가 있을 때, 실패 시 on_failure로 그 부수효과를 되돌린다.
+    try:
+        with nested_transaction(conn):
+            yield conn
+    except BaseException:
+        on_failure()
+        raise
+
+
 def init_db(conn: sqlite3.Connection, schema_ddl: str, table_names: list[str]) -> None:
     conn.executescript(schema_ddl)
     conn.commit()

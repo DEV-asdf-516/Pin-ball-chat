@@ -105,14 +105,14 @@ def list_messages(conn: sqlite3.Connection, conversation_id: str, before: int | 
 
 def get_conversation_settings(conn: sqlite3.Connection, conversation_id: str) -> dict | None:
     conversation_found: bool = exists(conn, ReadQuery.by_id(CONVERSATIONS, conversation_id))
-    
+
     ensure(conversation_found, "conversation not found")
 
     settings: dict | None = find_one(conn, ReadQuery.by_id(CONVERSATION_SETTINGS, conversation_id))
-    
+
     if not settings:
         return None
-    
+
     settings["compact_prompt"] = bool(settings["compact_prompt"]) if settings["compact_prompt"] is not None else None
 
     return settings
@@ -137,27 +137,49 @@ def has_import_action(conn: sqlite3.Connection, conversation_id: str) -> bool:
 
 
 def ensure_conversation_empty(conn: sqlite3.Connection, conversation_id: str) -> dict:
-    conversation = fetch_one(conn, 
+    conversation = fetch_one(
+        conn,
         RawSQL("""
-            SELECT c.*, p.character_id
-            FROM conversations c 
-            JOIN plots p 
-            ON p.id=c.plot_id
+            SELECT c.*
+            FROM conversations c
             WHERE c.id=:conversation_id
-        """), 
-        {"conversation_id": conversation_id}
+        """),
+        {"conversation_id": conversation_id},
     )
+
     if conversation is None:
         raise NotFound("conversation not found")
+
     if conversation["user_profile_id"] is None:
         raise Conflict("conversation has no user profile")
-    turn = fetch_one(conn, RawSQL("SELECT 1 FROM turns WHERE conversation_id=:conversation_id LIMIT 1"), {"conversation_id": conversation_id})
-    non_intro = fetch_one(conn, RawSQL("""
-        SELECT 1 FROM messages
-        WHERE conversation_id=:conversation_id
-          AND substr(id, 1, length(:intro_prefix)) <> :intro_prefix
-        LIMIT 1
-    """), {"conversation_id": conversation_id, "intro_prefix": f"intro_{conversation_id}_"})
+
+    turn = fetch_one(
+        conn,
+        RawSQL("""
+            SELECT 1
+            FROM turns
+            WHERE conversation_id=:conversation_id
+            LIMIT 1
+        """),
+        {"conversation_id": conversation_id},
+    )
+
+    non_intro = fetch_one(
+        conn,
+        RawSQL("""
+            SELECT 1
+            FROM messages
+            WHERE conversation_id=:conversation_id
+              AND substr(id, 1, length(:intro_prefix)) <> :intro_prefix
+            LIMIT 1
+        """),
+        {
+            "conversation_id": conversation_id,
+            "intro_prefix": f"intro_{conversation_id}_",
+        },
+    )
+
     if turn is not None or non_intro is not None:
         raise Conflict("conversation is not empty")
+
     return dict(conversation)

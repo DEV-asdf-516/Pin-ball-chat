@@ -12,13 +12,8 @@ export function plotCreatePage() {
           field("plotCreateGenreList", "장르", el("div", { id: "plotCreateGenreList", className: "genre-picker" })),
         ]),
         el("section", { className: "form-card" }, [
-          el("h2", { text: "캐릭터" }),
-          el("div", { className: "avatar-field" }, [
-            el("label", { id: "plotCreateAvatarPreview", className: "avatar-preview avatar-upload-target", text: "+", attrs: { for: "plotCreateCharacterAvatarFile" } }),
-            el("input", { id: "plotCreateCharacterAvatarFile", className: "file-input", type: "file", attrs: { accept: "image/png,image/jpeg,image/webp,image/gif" } }),
-          ]),
-          field("plotCreateCharacterName", "캐릭터 명", el("input", { id: "plotCreateCharacterName", attrs: { autocomplete: "off", maxlength: "40", placeholder: "" } })),
-          field("plotCreateCharacterSource", "캐릭터 설명", el("textarea", { id: "plotCreateCharacterSource", attrs: { rows: "8", placeholder: "" } })),
+          el("h2", { text: "등장인물" }),
+          el("div", { id: "plotCreateCharacters", className: "character-editor" }),
         ]),
       ]),
       el("div", { dataset: { formPanel: "intro" }, attrs: { hidden: "" } }, [

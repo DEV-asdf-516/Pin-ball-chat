@@ -1,6 +1,6 @@
-import { api, apiBase } from "./api.js";
+import { api } from "./api.js";
 import { activeConversation, conversationActivated, messagesLoaded } from "./actions.js";
-import { createCharacter, createPlot, loadCatalog, loadMorePlots, openPlot, renderPlots, uploadCharacterAvatar } from "./catalog.js";
+import { createPlot, loadCatalog, loadMorePlots, openPlot, renderPlots, uploadCharacterAvatar } from "./catalog.js";
 import { bindUserProfileSheet, cancelComposerEdit, canResendEditedUserMessage, canSendEmptyMessage, deleteMessage, deleteMessagesFrom, editGeneration, editUserMessage, hydrateTurnGenerations, loadMessages, markLastUserMessage, messageNode, needsUserProfileSelection, openUserProfileSheet, promptUserProfileIfNeeded, regenerate, resendEditedUserMessage, saveComposerEdit, sendMessage, showAssistantVariant, updateComposer } from "./chat.js";
 import { scrollMessagesToLatest, syncLatestMessageButton } from "./chat-scroll.js";
 import { keys } from "./config.js";
@@ -9,6 +9,7 @@ import { $, bindGrowingTextarea, closeDropdowns, confirmDialog, el, openDropdown
 import { activateFormTab, bindFormTabs } from "./form-tabs.js";
 import { bindGenrePicker, renderGenrePicker, selectedGenres } from "./genres.js";
 import { bindIntroEditor, introValue, renderIntroEditor } from "./intro-editor.js";
+import { bindCharacterEditor, characterValues, renderCharacterEditor } from "./character-editor.js";
 import { bindPlotManager, closePlotManagerEdit, openManagedPlot, openPlotManager } from "./plot-manager.js";
 import { applyTheme, bindSettings, loadConversationSettings, loadSettings } from "./settings.js";
 import { state } from "./state.js";
@@ -162,44 +163,45 @@ function bindPlotCreate() {
   bindIntroEditor("plotCreateIntroEditor");
   renderIntroEditor("plotCreateIntroEditor");
   bindGrowingTextarea($("plotCreateSource"));
-  bindGrowingTextarea($("plotCreateCharacterSource"));
-  $("plotCreateCharacterAvatarFile").onchange = readCreateAvatarFile;
+  bindCharacterEditor("plotCreateCharacters");
+  renderCharacterEditor("plotCreateCharacters");
   $("plotCreateForm").onsubmit = async (event) => {
     event.preventDefault();
     const title = $("plotCreateTitle").value.trim();
     const sourceText = $("plotCreateSource").value.trim();
-    const characterName = $("plotCreateCharacterName").value.trim();
-    const characterSource = $("plotCreateCharacterSource").value.trim();
-    if (!title || !sourceText || !characterName || !characterSource) {
+    const characters = characterValues("plotCreateCharacters");
+    if (!title || !sourceText || !characters.length || characters.some((character) => !character.name || !character.sourceText)) {
       toast("제목, 내용, 캐릭터 정보를 입력하세요");
       return;
     }
     const id = makeCatalogId();
-    const characterId = makeCatalogId();
+    const characterPayload = characters.map((character) => ({
+      id: makeCatalogId(),
+      type: "character",
+      name: character.name,
+      displayName: character.name,
+      sourceText: character.sourceText,
+    }));
     try {
-      const character = await createCharacter({
-        id: characterId,
-        type: "character",
-        name: characterName,
-        displayName: characterName,
-        sourceText: characterSource,
-      });
-      await uploadCreateAvatarIfNeeded(character.id || characterId);
       const intro = introValue("plotCreateIntroEditor");
       const plot = await createPlot({
         id,
         type: "plot",
         title,
-        characterId,
         genre: selectedGenres("plotCreateGenreList"),
         sourceText,
+        characters: characterPayload,
         ...(intro ? { intro } : {}),
       });
+      for (const [index, character] of characterPayload.entries()) {
+        const file = characters[index].avatarFile;
+        if (file) await uploadCharacterAvatar(character.id, file);
+      }
       toast("플롯을 저장했습니다");
       $("plotCreateForm").reset();
       resizePlotCreateTextareas();
-      clearCreateAvatarPreview();
       renderGenrePicker("plotCreateGenreList");
+      renderCharacterEditor("plotCreateCharacters");
       renderIntroEditor("plotCreateIntroEditor");
       activateFormTab("plotCreateForm", "prompt");
       await openPlot(plot.id, null, plot);
@@ -222,7 +224,7 @@ function bindPlotFab() {
     closeDropdowns();
     $("plotCreateForm").reset();
     resizePlotCreateTextareas();
-    clearCreateAvatarPreview();
+    renderCharacterEditor("plotCreateCharacters");
     renderGenrePicker("plotCreateGenreList");
     renderIntroEditor("plotCreateIntroEditor");
     activateFormTab("plotCreateForm", "prompt");
@@ -252,7 +254,7 @@ function bindPlotFab() {
 }
 
 function resizePlotCreateTextareas() {
-  for (const id of ["plotCreateSource", "plotCreateCharacterSource"]) {
+  for (const id of ["plotCreateSource"]) {
     const input = $(id);
     input.style.height = "auto";
     input.dispatchEvent(new Event("input"));
@@ -665,7 +667,7 @@ async function restoreRoute(saved = parseJson(localStorage.getItem(keys.route)),
     }
     if (saved.route === "chat" && saved.conversationId) {
       const conv = conversationActivated(await api(`/api/conversations/${encodeURIComponent(saved.conversationId)}`), true);
-      await openPlot(conv.plotId, conv.userProfileId, { id: conv.plotId, title: conv.title || "플롯", character_id: "", source_text: "", plot_json: "{}" });
+      await openPlot(conv.plotId, conv.userProfileId, { id: conv.plotId, title: conv.title || "플롯", source_text: "", plot_json: "{}" });
       await loadConversationSettings();
       await loadMessages();
       showScreen("chat", { history });
@@ -683,69 +685,6 @@ function nearBottom(node) {
 function makeCatalogId() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function renderCreateAvatarPreview() {
-  const preview = $("plotCreateAvatarPreview");
-  if (!preview) return;
-  const src = safeImageUrl(getCreateAvatarPreviewUrl());
-  preview.replaceChildren();
-  preview.classList.toggle("has-image", Boolean(src));
-  if (!src) {
-    preview.textContent = "+";
-    return;
-  }
-  preview.append(el("img", { attrs: { src, alt: "" } }));
-}
-
-function clearCreateAvatarPreview() {
-  const preview = $("plotCreateAvatarPreview");
-  if (preview) preview.dataset.previewUrl = "";
-  const input = $("plotCreateCharacterAvatarFile");
-  if (input) input.value = "";
-  renderCreateAvatarPreview();
-}
-
-function readCreateAvatarFile() {
-  const file = $("plotCreateCharacterAvatarFile").files?.[0];
-  const preview = $("plotCreateAvatarPreview");
-  if (!file || !preview) {
-    if (preview) preview.dataset.previewUrl = "";
-    renderCreateAvatarPreview();
-    return;
-  }
-  const reader = new FileReader();
-  reader.onload = () => {
-    preview.dataset.previewUrl = typeof reader.result === "string" ? reader.result : "";
-    renderCreateAvatarPreview();
-  };
-  reader.onerror = () => {
-    preview.dataset.previewUrl = "";
-    renderCreateAvatarPreview();
-    toast("이미지를 읽지 못했습니다");
-  };
-  reader.readAsDataURL(file);
-}
-
-function getCreateAvatarPreviewUrl() {
-  return $("plotCreateAvatarPreview")?.dataset.previewUrl || "";
-}
-
-async function uploadCreateAvatarIfNeeded(characterId) {
-  const file = $("plotCreateCharacterAvatarFile")?.files?.[0];
-  if (!file) return;
-  await uploadCharacterAvatar(characterId, file);
-}
-
-function safeImageUrl(value) {
-  if (typeof value !== "string" || !value) return "";
-  if (value.startsWith("data:image/")) return value;
-  try {
-    const url = new URL(value, apiBase());
-    return ["http:", "https:"].includes(url.protocol) ? url.href : "";
-  } catch {
-    return "";
-  }
 }
 
 function resizeComposerInput() {

@@ -73,7 +73,6 @@ def record_generation_output(
         "turn_id": prepared.turn_id,
         "conversation_id": prepared.conversation_id,
         "plot_id": built.plot["id"],
-        "character_id": built.char["id"],
         "user_profile_id": built.user["id"],
         "model_id": params.model,
         "adapter_id": params.adapter_id,

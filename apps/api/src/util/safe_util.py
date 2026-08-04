@@ -28,3 +28,7 @@ def get_safe_list(source: dict, key: str) -> list:
 
 def get_safe_tuple(source: dict, key: str) -> tuple:
     return source.get(key) or ()
+
+
+def get_or_default(source: dict, primary_key: str, *, fallback_key: str, default: object = None) -> object:
+    return source.get(primary_key, source.get(fallback_key, default))

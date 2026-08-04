@@ -2,10 +2,10 @@ import json
 import re
 import sqlite3
 
-from core.db import ReadQuery, find_one
+from core.db import Bind, OrderBy, ReadQuery, find_all, find_one
 from core.errors import get_or_raise
 from domain.catalog.reader import find_catalog_by_id
-from domain.catalog.specs import CharacterData, CatalogKind, PlotData, UserProfileData, parse_catalog_data
+from domain.catalog.specs import CharacterData, CatalogKind, PlotData, SPEC_BY_KIND, UserProfileData, parse_catalog_data
 from domain.conversations.specs import CONVERSATIONS
 
 # build_prompt()가 최근 RECENT_WINDOW개 메시지는 항상 원문으로 넣고, 그보다 오래돼 밀려난 메시지가
@@ -18,20 +18,26 @@ def row_json(row: sqlite3.Row | dict, key: str) -> dict:
     return json.loads(row[key])
 
 
-def resolve_prompt_context(conn: sqlite3.Connection, conversation_id: str) -> tuple[dict, dict, dict, dict]:
+def resolve_prompt_context(conn: sqlite3.Connection, conversation_id: str) -> tuple[dict, dict, list[dict], dict]:
     conv_row: dict | None = find_one(conn, ReadQuery.by_id(CONVERSATIONS, conversation_id))
     conv: dict = get_or_raise(conv_row, "conversation not found")
 
     plot_row: dict | None = find_catalog_by_id(conn, CatalogKind.PLOT, conv["plot_id"])
     plot: dict = get_or_raise(plot_row, "conversation plot missing")
 
-    char_row: dict | None = find_catalog_by_id(conn, CatalogKind.CHARACTER, plot["character_id"])
-    char: dict = get_or_raise(char_row, "plot character missing")
+    chars: list[dict] = find_all(
+        conn, ReadQuery(
+            SPEC_BY_KIND[CatalogKind.CHARACTER],
+            where=Bind({"plot_id": plot["id"]}),
+            order_by=(OrderBy("sort_order"), OrderBy("id")),
+        ),
+    )
+    get_or_raise(chars, "plot has no characters")
 
     user_row: dict | None = find_catalog_by_id(conn, CatalogKind.USER_PROFILE, conv["user_profile_id"])
     user: dict = get_or_raise(user_row, "conversation has no user_profile set (select one before chatting)")
 
-    return conv, plot, char, user
+    return conv, plot, chars, user
 
 
 def build_ctx(plot: dict, char: dict, user: dict) -> dict:

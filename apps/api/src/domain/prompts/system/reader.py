@@ -121,20 +121,27 @@ def build_prompt(conn: sqlite3.Connection, conversation_id: str, user_message: s
     # TODO: preferences.json을 로어북처럼 쓰는 방식으로 나중에 다시 연결한다.
 
     system_prompt: dict = _system_prompt(tier)
-    conv, plot, char, user = resolve_prompt_context(conn, conversation_id)
-    char_json: dict = row_json(char, "profile_json")
+    conv, plot, chars, user = resolve_prompt_context(conn, conversation_id)
+    primary_char: dict = chars[0]
     user_json: dict = row_json(user, "profile_json")
     plot_json: dict = row_json(plot, "plot_json")
-    ctx: dict = build_ctx(plot, char, user)
+    ctx: dict = build_ctx(plot, primary_char, user)
     warnings: list = []
 
-    char_source: str = source_for(char_json, char["source_text"])
     user_source: str = source_for(user_json, user["source_text"])
     plot_source: str = source_for(plot_json, plot["source_text"])
 
-    char_body, _ = extract_ooc(render_value(char_source, ctx, warnings))
     user_body, _ = extract_ooc(render_value(user_source, ctx, warnings))
     plot_body, _ = extract_ooc(render_value(plot_source, ctx, warnings))
+    character_blocks: list[str] = []
+    for character in chars:
+        character_json: dict = row_json(character, "profile_json")
+        character_ctx: dict = build_ctx(plot, character, user)
+        character_source: str = source_for(character_json, character["source_text"])
+        character_body, _ = extract_ooc(render_value(character_source, character_ctx, warnings))
+        character_blocks.append(
+            f'<char name="{character_ctx["char"]}" role="assistant">\n{character_body}\n</char>'
+        )
 
     # regenerate 중엔 이 turn의 기존 candidate가 아직 rejected=1로 안 바뀐 상태라 active_messages_sql만으로는
     # 안 걸러진다 — exclude_turn_id로 이 turn의 유저 메시지·이전 candidate를 recent에서 직접 빼고,
@@ -152,7 +159,7 @@ def build_prompt(conn: sqlite3.Connection, conversation_id: str, user_message: s
     story_body: str = "\n\n".join([
         tag("title", ctx["plot"]),
         tag("information", plot_body),
-        f'<char name="{ctx["char"]}" role="assistant">\n{char_body}\n</char>',
+        *character_blocks,
         f'<char name="관찰자" role="assistant">\n{system_prompt["story"]["observer_char"]}\n</char>',
         f'<user name="{ctx["user"]}" role="user">\n{user_body}\n</user>',
     ])
@@ -180,4 +187,4 @@ def build_prompt(conn: sqlite3.Connection, conversation_id: str, user_message: s
         *[Message(role=r["role"], content=r["content"]) for r in reversed(recent)],
         Message(role="user", content=described(system_prompt["current_input_description"], "current_input", user_input_interpretation(user_message, ctx, system_prompt))),
     ]
-    return BuiltPrompt(system=system, messages=messages, warnings=warnings, plot=plot, char=char, user=user)
+    return BuiltPrompt(system=system, messages=messages, warnings=warnings, plot=plot, char=primary_char, user=user)

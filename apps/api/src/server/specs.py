@@ -29,12 +29,24 @@ class CatalogBody(CamelModel):
 class CharacterCreateRequest(CatalogBody):
     id: str
     type: str = "character"
+    plot_id: str = Field(alias="plotId")
+    sort_order: int = Field(default=0, alias="sortOrder")
     source_text: str = Field(alias="sourceText")
     name: str | None = None
     display_name: str | None = Field(default=None, alias="displayName")
 
 
 class CharacterUpdateRequest(CatalogBody):
+    type: str = "character"
+    plot_id: str | None = Field(default=None, alias="plotId")
+    sort_order: int | None = Field(default=None, alias="sortOrder")
+    source_text: str = Field(alias="sourceText")
+    name: str | None = None
+    display_name: str | None = Field(default=None, alias="displayName")
+
+
+class PlotCharacterRequest(CatalogBody):
+    id: str
     type: str = "character"
     source_text: str = Field(alias="sourceText")
     name: str | None = None
@@ -59,18 +71,20 @@ class UserProfileUpdateRequest(CatalogBody):
 class PlotCreateRequest(CatalogBody):
     id: str
     type: str = "plot"
-    character_id: str = Field(alias="characterId")
     source_text: str = Field(alias="sourceText")
     title: str | None = None
     genre: list[str] = Field(default_factory=list)
+    characters: list[PlotCharacterRequest] = Field(default_factory=list)
 
 
 class PlotUpdateRequest(CatalogBody):
     type: str = "plot"
-    character_id: str = Field(alias="characterId")
     source_text: str = Field(alias="sourceText")
     title: str | None = None
     genre: list[str] = Field(default_factory=list)
+    # 캐릭터 추가·삭제·정렬은 개별 character CRUD로 처리한다. 이 필드는 구버전 클라이언트의
+    # 요청을 파싱할 수 있게만 두고, update route에서 plot 데이터로 저장하지 않는다.
+    characters: list[PlotCharacterRequest] | None = None
 
 
 class PreferenceCreateRequest(CatalogBody):
@@ -291,6 +305,8 @@ class CatalogItemResponse(BaseModel):
 
 class CharacterResponse(CatalogItemResponse):
     name: str
+    plot_id: str
+    sort_order: int
     profile_json: str
 
 
@@ -301,7 +317,6 @@ class UserProfileResponse(CatalogItemResponse):
 
 class PlotResponse(CatalogItemResponse):
     title: str
-    character_id: str
     plot_json: str
 
 

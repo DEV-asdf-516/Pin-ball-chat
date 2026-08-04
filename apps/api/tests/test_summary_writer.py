@@ -74,12 +74,12 @@ class SummaryWriterTests(unittest.IsolatedAsyncioTestCase):
         self._connect = _connect
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO characters (id, name, profile_json, created_at, updated_at) VALUES (?,?,?,?,?)",
-                ("char-1", "char", '{"id":"char-1","type":"character","sourceText":"","name":"캐릭"}', "t", "t"),
+                "INSERT INTO plots (id, title, plot_json, created_at, updated_at) VALUES (?,?,?,?,?)",
+                ("plot-1", "plot", '{"id":"plot-1","type":"plot","sourceText":"","title":"플롯"}', "t", "t"),
             )
             conn.execute(
-                "INSERT INTO plots (id, title, character_id, plot_json, created_at, updated_at) VALUES (?,?,?,?,?,?)",
-                ("plot-1", "plot", "char-1", '{"id":"plot-1","type":"plot","characterId":"char-1","sourceText":"","title":"플롯"}', "t", "t"),
+                "INSERT INTO characters (id, name, plot_id, sort_order, profile_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+                ("char-1", "char", "plot-1", 0, '{"id":"char-1","type":"character","sourceText":"","name":"캐릭"}', "t", "t"),
             )
             conn.execute(
                 "INSERT INTO user_profiles (id, name, profile_json, created_at, updated_at) VALUES (?,?,?,?,?)",

@@ -1,5 +1,6 @@
 import { api, apiBase, sseError, streamSse } from "./api.js";
 import { activeConversation, conversationProfileChanged, messagesLoaded, userProfileDeleted, userProfileUpdated } from "./actions.js";
+import { firstPlotCharacter } from "./catalog.js";
 import { messagesNearLatest, settleMessagesAtLatest } from "./chat-scroll.js";
 import { $, closeDropdowns, confirmDialog, el, parseJson, setChildren, toast, toggleDropdown } from "./dom.js";
 import { renderMarkdown } from "./markdown.js";
@@ -520,7 +521,7 @@ function isPlotCharacterSpeaker(speaker) {
 
 function activePlotCharacter() {
   const plot = state.selectedPlot || state.catalog.plots.byId.get(activeConversation()?.plotId);
-  return state.catalog.chars.byId.get(plot?.character_id);
+  return firstPlotCharacter(plot);
 }
 
 function activeCharacterName() {

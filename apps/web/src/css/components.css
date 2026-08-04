@@ -1781,8 +1781,8 @@
   min-height: 200px;
 }
 
-#plotCreateCharacterSource,
-#plotManageCharacterSource {
+#plotCreateCharacters textarea,
+#plotManageCharacters textarea {
   min-height: 160px;
 }
 
@@ -1893,6 +1893,53 @@
 
 .intro-add-btn {
   min-height: 38px;
+  font-size: 22px;
+  color: var(--text-2);
+}
+
+.character-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.character-slots {
+  display: grid;
+  gap: 10px;
+}
+
+.character-slot {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.character-slot-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.character-remove-btn,
+.character-add-btn {
+  min-height: 38px;
+}
+
+.character-remove-btn {
+  flex: 0 0 34px;
+  padding: 0;
+  color: var(--text-2);
+}
+
+.character-remove-btn:disabled,
+.character-add-btn:disabled {
+  cursor: not-allowed;
+  opacity: .42;
+}
+
+.character-add-btn {
   font-size: 22px;
   color: var(--text-2);
 }

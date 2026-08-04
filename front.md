@@ -14,7 +14,7 @@
 - 색상은 `theme.css` 토큰만. decorative gradient 금지.
 
 ## 도메인 규칙
-- 플롯 제작: character/user 선택 UI 없음. ID 프론트 생성 → `POST /api/characters` → `POST /api/plots`.
+- 플롯 제작: character/user 선택 UI 없음. ID 프론트 생성 → 플롯+캐릭터 배열 복합 요청 `POST /api/plots` 1번.
 - 프사: 파일 입력 → `POST /api/uploads/character/{id}` multipart. URL 입력 노출 금지, FormData `Content-Type` 수동 설정 금지.
 - 장르 8개 고정, 최대 2개 선택.
 - 대화 생성: `{ plotId, title }`만 → 즉시 진입. profile 없이 전송 시 sheet 재표시.

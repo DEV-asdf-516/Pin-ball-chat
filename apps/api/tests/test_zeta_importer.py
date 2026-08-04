@@ -12,12 +12,12 @@ from domain.conversations.importer.importer import commit_import_session, get_im
 
 def _seed(conn, conversation_id="conv-1"):
     conn.execute(
-        "INSERT INTO characters (id,name,profile_json,created_at,updated_at) VALUES (:id,:name,:profile,:ts,:ts)",
-        {"id": "char-1", "name": "캐릭터", "profile": "{}", "ts": "t"},
+        "INSERT INTO plots (id,title,plot_json,created_at,updated_at) VALUES (:id,:title,:plot,:ts,:ts)",
+        {"id": "plot-1", "title": "플롯", "plot": "{}", "ts": "t"},
     )
     conn.execute(
-        "INSERT INTO plots (id,title,character_id,plot_json,created_at,updated_at) VALUES (:id,:title,:character,:plot,:ts,:ts)",
-        {"id": "plot-1", "title": "플롯", "character": "char-1", "plot": "{}", "ts": "t"},
+        "INSERT INTO characters (id,name,plot_id,sort_order,profile_json,created_at,updated_at) VALUES (:id,:name,:plot_id,0,:profile,:ts,:ts)",
+        {"id": "char-1", "name": "캐릭터", "plot_id": "plot-1", "profile": "{}", "ts": "t"},
     )
     conn.execute(
         "INSERT INTO user_profiles (id,name,profile_json,created_at,updated_at) VALUES (:id,:name,:profile,:ts,:ts)",

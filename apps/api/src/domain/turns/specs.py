@@ -38,7 +38,7 @@ GENERATION_EDITS = TableSpec(
 GENERATIONS = TableSpec(
     table="generations",
     columns=(
-        "id", "turn_id", "conversation_id", "plot_id", "character_id", "user_profile_id", "model_id", "adapter_id",
+        "id", "turn_id", "conversation_id", "plot_id", "user_profile_id", "model_id", "adapter_id",
         "candidate_index", "prompt_snapshot", "prompt_hash", "prompt_messages_json", "output_text", "params_json", "output_token_count", "selected", "created_at",
     ),
 )

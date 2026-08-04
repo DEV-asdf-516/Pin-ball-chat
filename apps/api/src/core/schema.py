@@ -2,6 +2,8 @@ SCHEMA_DDL: str = """
 CREATE TABLE IF NOT EXISTS characters (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
+  plot_id TEXT NOT NULL REFERENCES plots(id),
+  sort_order INTEGER NOT NULL,
   profile_json TEXT NOT NULL,
   source_format TEXT NOT NULL DEFAULT 'json',
   source_text TEXT,
@@ -20,13 +22,11 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 CREATE TABLE IF NOT EXISTS plots (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
-  character_id TEXT NOT NULL,
   plot_json TEXT NOT NULL,
   source_format TEXT NOT NULL DEFAULT 'json',
   source_text TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  FOREIGN KEY(character_id) REFERENCES characters(id)
+  updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS preference_profiles (
   id TEXT PRIMARY KEY,
@@ -91,7 +91,6 @@ CREATE TABLE IF NOT EXISTS generations (
   turn_id TEXT NOT NULL,
   conversation_id TEXT NOT NULL,
   plot_id TEXT NOT NULL,
-  character_id TEXT NOT NULL,
   user_profile_id TEXT,
   model_id TEXT NOT NULL,
   adapter_id TEXT,
@@ -108,7 +107,6 @@ CREATE TABLE IF NOT EXISTS generations (
   FOREIGN KEY(turn_id) REFERENCES turns(id),
   FOREIGN KEY(conversation_id) REFERENCES conversations(id),
   FOREIGN KEY(plot_id) REFERENCES plots(id),
-  FOREIGN KEY(character_id) REFERENCES characters(id),
   FOREIGN KEY(user_profile_id) REFERENCES user_profiles(id) ON DELETE SET NULL
 );
 CREATE TABLE IF NOT EXISTS user_actions (
@@ -148,4 +146,7 @@ CREATE INDEX IF NOT EXISTS idx_generation_edits_generation ON generation_edits(g
 
 -- trainer DPO export의 turn당 rejected 후보 조회 (rejected=1 필터를 인덱스로 태움)
 CREATE INDEX IF NOT EXISTS idx_generations_turn_rejected ON generations(turn_id, rejected);
+
+-- 플롯 소속 캐릭터 조회 (plot_id 필터 + sort_order, id 정렬). id는 sort_order 동률 시 tie-breaker.
+CREATE INDEX IF NOT EXISTS idx_characters_plot_sort ON characters(plot_id, sort_order, id);
 """

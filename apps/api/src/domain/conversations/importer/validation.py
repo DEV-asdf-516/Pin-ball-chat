@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from core.errors import BadRequest
 from domain.conversations.importer.session_store import PartInfo, StoredImportSession
+from util.safe_util import get_or_default
 from util.string_util import camel_to_snake
 from util.validation_util import required_bounded_int, required_nonblank_text
 
@@ -215,7 +216,7 @@ def validate_manifest(session: StoredImportSession) -> None:
     if not manifest:
         return
 
-    total: object = manifest.get("totalMessages", manifest.get("messageCount"))
+    total: object = get_or_default(manifest, "totalMessages", fallback_key="messageCount")
 
     if total is not None and total != session.received_messages:
         raise BadRequest("manifest total message count does not match uploaded parts")

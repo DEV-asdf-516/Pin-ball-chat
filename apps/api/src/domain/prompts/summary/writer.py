@@ -73,8 +73,8 @@ async def maybe_update_summary(conversation_id: str) -> None:
                 params = GenerationParams(model=last_gen["model_id"], provider_name=provider_name)
          
     
-            _, plot, char, user = resolve_prompt_context(conn, conversation_id)
-            ctx: dict = build_ctx(plot, char, user)
+            _, plot, chars, user = resolve_prompt_context(conn, conversation_id)
+            ctx: dict = build_ctx(plot, chars[0], user)
 
         summary_system_prompt: dict = json.loads(_SUMMARY_SYSTEM_PROMPT_PATH.read_text(encoding="utf-8"))
         warnings: list = []
@@ -188,4 +188,3 @@ async def maybe_update_summary(conversation_id: str) -> None:
                 pending = pending[len(chunk):]
     except Exception:
         log.exception("conversation summary update failed: conversation_id=%s", conversation_id)
-

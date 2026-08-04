@@ -25,7 +25,7 @@ def _materialize_intro(conn: sqlite3.Connection, conversation_id: str) -> None:
     if has_turns:
         return
 
-    _, plot, char, user = resolve_prompt_context(conn, conversation_id)
+    _, plot, chars, user = resolve_prompt_context(conn, conversation_id)
     
     plot_json: dict = row_json(plot, "plot_json")
     intro: dict = get_safe_dict(plot_json, "intro")
@@ -34,7 +34,7 @@ def _materialize_intro(conn: sqlite3.Connection, conversation_id: str) -> None:
     if not blocks:
         return
 
-    ctx: dict = build_ctx(plot, char, user)
+    ctx: dict = build_ctx(plot, chars[0], user)
     warnings: list = []
     ts: str = utc_now_string()
 
@@ -224,8 +224,7 @@ def record_zeta_import(conn: sqlite3.Connection, session: StoredImportSession, c
             "id": generation_id, 
             "turn_id": current_turn_id, 
             "conversation_id": session.conversation_id,
-            "plot_id": conversation["plot_id"], 
-            "character_id": conversation["character_id"],
+            "plot_id": conversation["plot_id"],
             "user_profile_id": conversation["user_profile_id"], 
             "model_id": "imported:zeta", 
             "adapter_id": None,

@@ -12,22 +12,23 @@ from domain.prompts.system import reader as prompts_reader
 
 def _seed_conversation(conn) -> None:
     conn.execute(
-        "INSERT INTO characters (id, name, profile_json, created_at, updated_at) VALUES (?,?,?,?,?)",
+        "INSERT INTO plots (id, title, plot_json, created_at, updated_at) VALUES (?,?,?,?,?)",
         (
-            "char-1",
-            "char",
-            json.dumps({"id": "char-1", "type": "character", "sourceText": "", "name": "char"}),
+            "plot-1",
+            "plot",
+            json.dumps({"id": "plot-1", "type": "plot", "sourceText": "", "title": "plot"}),
             "t",
             "t",
         ),
     )
     conn.execute(
-        "INSERT INTO plots (id, title, character_id, plot_json, created_at, updated_at) VALUES (?,?,?,?,?,?)",
+        "INSERT INTO characters (id, name, plot_id, sort_order, profile_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
         (
-            "plot-1",
-            "plot",
             "char-1",
-            json.dumps({"id": "plot-1", "type": "plot", "characterId": "char-1", "sourceText": "", "title": "plot"}),
+            "char",
+            "plot-1",
+            0,
+            json.dumps({"id": "char-1", "type": "character", "sourceText": "", "name": "char"}),
             "t",
             "t",
         ),

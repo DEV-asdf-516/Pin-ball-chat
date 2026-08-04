@@ -1,6 +1,7 @@
 import { apiBase } from "./api.js";
-import { deletePlot, findPlot, loadCharacter, loadMorePlots, updateCharacter, updatePlot, uploadCharacterAvatar } from "./catalog.js";
+import { createCharacter, deleteCharacter, deletePlot, findPlot, firstPlotCharacter, loadCatalogKind, loadMorePlots, plotCharacters, updateCharacter, updatePlot, uploadCharacterAvatar } from "./catalog.js";
 import { $, bindGrowingTextarea, confirmDialog, el, parseJson, setChildren, toast } from "./dom.js";
+import { bindCharacterEditor, characterValues, renderCharacterEditor } from "./character-editor.js";
 import { activateFormTab, bindFormTabs } from "./form-tabs.js";
 import { bindGenrePicker, renderGenrePicker, selectedGenres } from "./genres.js";
 import { bindIntroEditor, introValue, renderIntroEditor } from "./intro-editor.js";
@@ -71,9 +72,9 @@ export async function openManagedPlot(id) {
 async function selectManagePlot(id) {
   state.managedPlotId = id;
   const plot = findPlot(id);
-  if (plot?.character_id && !state.catalog.chars.byId.has(plot.character_id)) {
+  if (plot && !plotCharacters(plot).length) {
     try {
-      await loadCharacter(plot.character_id);
+      await loadCatalogKind("chars", true);
     } catch {}
   }
   showPlotManageEdit();
@@ -98,30 +99,41 @@ async function saveManagedPlot() {
     toast("수정할 플롯을 선택하세요");
     return;
   }
+
   try {
     const currentPlot = findPlot(id);
-    const charId = currentPlot?.character_id || "";
-    const characterName = $("plotManageCharacterName").value.trim();
-    const characterSource = $("plotManageCharacterSource").value.trim();
-    if (!characterName || !characterSource) {
-      toast("캐릭터 정보를 입력하세요");
+    const currentCharacters = plotCharacters(currentPlot);
+    const values = characterValues("plotManageCharacters");
+    if (!values.length || values.length > 10 || values.some((character) => !character.name || !character.sourceText)) {
+      toast("캐릭터는 1~10명이며 이름과 설명을 모두 입력하세요");
       return;
     }
-    if (charId) {
-      await updateCharacter(charId, {
-        type: "character",
-        name: characterName,
-        displayName: characterName,
-        ...existingAvatarPayload(currentPlot?.character_id),
-        sourceText: characterSource,
-      });
-      await uploadManagedAvatarIfNeeded(charId);
+
+    const nextIds = new Set(values.map((character) => character.id).filter(Boolean));
+    for (const character of currentCharacters) {
+      if (!nextIds.has(character.id)) await deleteCharacter(character.id);
     }
+
+    for (const [index, value] of values.entries()) {
+      const payload = {
+        type: "character",
+        plotId: id,
+        sortOrder: index,
+        name: value.name,
+        displayName: value.name,
+        sourceText: value.sourceText,
+        ...(value.avatarUrl ? { avatarUrl: value.avatarUrl } : {}),
+      };
+      const character = value.id
+        ? await updateCharacter(value.id, payload)
+        : await createCharacter({ id: makeCatalogId(), ...payload });
+      if (value.avatarFile) await uploadCharacterAvatar(character.id, value.avatarFile);
+    }
+
     const intro = introValue("plotManageIntroEditor");
     const plot = await updatePlot(id, {
       type: "plot",
       title: $("plotManageTitle").value.trim(),
-      characterId: charId || state.catalog.chars.byId.values().next().value?.id || "",
       genre: selectedGenres("plotManageGenreList"),
       sourceText: $("plotManageSource").value,
       ...(intro ? { intro } : {}),
@@ -152,13 +164,19 @@ async function deleteManagedPlot() {
 
 function plotText(plot) {
   const raw = parseJson(plot.plot_json);
-  return [plot.id, plot.title, plot.character_id, plot.source_text, ...(raw.genre || [])].filter(Boolean).join(" ").toLowerCase();
+  return [
+    plot.id,
+    plot.title,
+    plot.source_text,
+    ...plotCharacters(plot).flatMap((character) => [character.id, character.name, character.source_text]),
+    ...(raw.genre || []),
+  ].filter(Boolean).join(" ").toLowerCase();
 }
 
 function renderPlotEditForm(id) {
   const plot = findPlot(id);
   const plotData = parseJson(plot?.plot_json);
-  const char = state.catalog.chars.byId.get(plot?.character_id);
+  const characters = plotCharacters(plot);
   setChildren($("plotManageEditMount"), [
     el("form", { id: "plotManageForm", className: "form-page plot-manage-edit" }, [
       formTabs("prompt"),
@@ -170,18 +188,8 @@ function renderPlotEditForm(id) {
           field("plotManageGenreList", "장르", el("div", { id: "plotManageGenreList", className: "genre-picker" })),
         ]),
         el("section", { className: "form-card" }, [
-          el("h2", { text: "캐릭터" }),
-          el("div", { className: "avatar-field" }, [
-            el("label", {
-              id: "plotManageAvatarPreview",
-              className: "avatar-preview avatar-upload-target",
-              text: "+",
-              attrs: { for: "plotManageCharacterAvatarFile" },
-            }),
-            el("input", { id: "plotManageCharacterAvatarFile", className: "file-input", type: "file", attrs: { accept: "image/png,image/jpeg,image/webp,image/gif" } }),
-          ]),
-          field("plotManageCharacterName", "캐릭터 명", el("input", { id: "plotManageCharacterName", value: characterName(char), attrs: { autocomplete: "off", maxlength: "40", placeholder: "" } })),
-          field("plotManageCharacterSource", "캐릭터 설명", el("textarea", { id: "plotManageCharacterSource", text: char?.source_text || "", attrs: { rows: "8", placeholder: "" } })),
+          el("h2", { text: "등장인물" }),
+          el("div", { id: "plotManageCharacters", className: "character-editor" }),
         ]),
       ]),
       el("div", { dataset: { formPanel: "intro" }, attrs: { hidden: "" } }, [
@@ -197,12 +205,9 @@ function renderPlotEditForm(id) {
     ]),
   ]);
   $("plotManageSource").value = plot?.source_text || "";
-  $("plotManageCharacterSource").value = char?.source_text || "";
   bindGrowingTextarea($("plotManageSource"));
-  bindGrowingTextarea($("plotManageCharacterSource"));
-  $("plotManageAvatarPreview").dataset.previewUrl = existingAvatarUrl(char);
-  $("plotManageCharacterAvatarFile").onchange = readManagedAvatarFile;
-  renderManagedAvatarPreview();
+  renderCharacterEditor("plotManageCharacters", characters);
+  bindCharacterEditor("plotManageCharacters");
   renderGenrePicker("plotManageGenreList", plotData.genre || []);
   bindGenrePicker("plotManageGenreList");
   renderIntroEditor("plotManageIntroEditor", plotData.intro);
@@ -234,10 +239,10 @@ function field(inputId, label, control) {
 }
 
 function plotThumb(plot) {
-  const char = state.catalog.chars.byId.get(plot.character_id);
-  const src = safeImageUrl(parseJson(char?.profile_json).avatarUrl);
+  const character = firstPlotCharacter(plot);
+  const src = safeImageUrl(parseJson(character?.profile_json).avatarUrl);
   if (src) return el("img", { className: "plot-manage-thumb", attrs: { src, alt: "" } });
-  return el("div", { className: "plot-manage-thumb", text: (char?.name || plotTitle(plot) || "?").trim().slice(0, 1) });
+  return el("div", { className: "plot-manage-thumb", text: characterName(character, plotTitle(plot)).trim().slice(0, 1) });
 }
 
 function plotTitle(plot) {
@@ -245,9 +250,9 @@ function plotTitle(plot) {
 }
 
 function plotMeta(plot) {
-  const char = state.catalog.chars.byId.get(plot.character_id);
+  const character = firstPlotCharacter(plot);
   const genres = parseJson(plot.plot_json).genre || [];
-  return [characterName(char), ...genres].filter(Boolean).join(" · ") || "플롯";
+  return [characterName(character), ...genres].filter(Boolean).join(" · ") || "플롯";
 }
 
 function plotList() {
@@ -255,58 +260,10 @@ function plotList() {
   return bucket.order.map((id) => bucket.byId.get(id)).filter(Boolean);
 }
 
-function characterName(char) {
-  if (!char) return "";
-  const profile = parseJson(char.profile_json);
-  return profile.displayName || profile.display_name || char.name || profile.name || "";
-}
-
-function existingAvatarUrl(char) {
-  const value = parseJson(char?.profile_json).avatarUrl;
-  return typeof value === "string" ? value : "";
-}
-
-function existingAvatarPayload(characterId) {
-  const avatarUrl = existingAvatarUrl(state.catalog.chars.byId.get(characterId));
-  return avatarUrl ? { avatarUrl } : {};
-}
-
-function getManagedAvatarPreviewUrl() {
-  return $("plotManageAvatarPreview")?.dataset.previewUrl || "";
-}
-
-function renderManagedAvatarPreview() {
-  const preview = $("plotManageAvatarPreview");
-  if (!preview) return;
-  const src = safeImageUrl(getManagedAvatarPreviewUrl());
-  preview.replaceChildren();
-  preview.classList.toggle("has-image", Boolean(src));
-  if (!src) {
-    preview.textContent = "+";
-    return;
-  }
-  preview.append(el("img", { attrs: { src, alt: "" } }));
-}
-
-function readManagedAvatarFile() {
-  const file = $("plotManageCharacterAvatarFile").files?.[0];
-  const preview = $("plotManageAvatarPreview");
-  if (!file || !preview) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    preview.dataset.previewUrl = typeof reader.result === "string" ? reader.result : "";
-    renderManagedAvatarPreview();
-  };
-  reader.onerror = () => {
-    toast("이미지를 읽지 못했습니다");
-  };
-  reader.readAsDataURL(file);
-}
-
-async function uploadManagedAvatarIfNeeded(characterId) {
-  const file = $("plotManageCharacterAvatarFile")?.files?.[0];
-  if (!file) return;
-  await uploadCharacterAvatar(characterId, file);
+function characterName(character, fallback = "") {
+  if (!character) return fallback;
+  const profile = parseJson(character.profile_json);
+  return profile.displayName || profile.display_name || character.name || profile.name || fallback;
 }
 
 function safeImageUrl(value) {
@@ -318,4 +275,9 @@ function safeImageUrl(value) {
   } catch {
     return "";
   }
+}
+
+function makeCatalogId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }

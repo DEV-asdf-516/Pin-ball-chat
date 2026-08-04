@@ -1,7 +1,8 @@
 import { activeConversation } from "./actions.js";
 import { api } from "./api.js";
+import { plotCharacters } from "./catalog.js";
 import { loadMessages } from "./chat.js";
-import { $, confirmDialog, el, setChildren, toast } from "./dom.js";
+import { $, confirmDialog, el, parseJson, setChildren, toast } from "./dom.js";
 import { state } from "./state.js";
 
 let selection = null;
@@ -279,15 +280,18 @@ function formatImportDate(value) {
 function currentSpeakerMatches() {
   const conv = activeConversation();
   const plot = state.catalog.plots.byId.get(conv?.plotId);
-  const characterId = plot?.character_id ?? plot?.characterId;
-  const character = state.catalog.chars.byId.get(characterId);
   const user = state.catalog.users.byId.get(conv?.userProfileId);
-  const characterNames = new Set([character?.id, character?.name].filter(Boolean).map(normalizeName));
+  const characters = plotCharacters(plot);
+  const characterNames = new Set(
+    characters.flatMap((character) => [
+      character?.id,
+      character?.name,
+      parseJson(character?.profile_json).name,
+      parseJson(character?.profile_json).displayName,
+      parseJson(character?.profile_json).display_name,
+    ]).filter(Boolean).map(normalizeName),
+  );
   const userNames = new Set([user?.id, user?.name].filter(Boolean).map(normalizeName));
-  try {
-    const profile = JSON.parse(character?.profile_json || "{}");
-    [profile.name, profile.displayName, profile.display_name].filter(Boolean).forEach((name) => characterNames.add(normalizeName(name)));
-  } catch {}
   try {
     const profile = JSON.parse(user?.profile_json || "{}");
     [profile.name, profile.displayName, profile.display_name].filter(Boolean).forEach((name) => userNames.add(normalizeName(name)));

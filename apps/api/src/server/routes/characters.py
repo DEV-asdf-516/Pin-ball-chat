@@ -1,9 +1,8 @@
 from fastapi import APIRouter
 
-from domain.characters import get_character
+from domain.characters import create_character, delete_character as delete_character_use_case, get_character, update_character
 from domain.catalog.reader import list_catalog_by_kind
 from domain.catalog.specs import CatalogKind
-from domain.catalog.writer import create_catalog_item, delete_catalog_item, update_catalog_item
 from server.dependencies import DbConn
 from server.specs import CharacterCreateRequest, CharacterResponse, CharactersPageResponse, CharacterUpdateRequest, CatalogDeleteResponse
 
@@ -27,14 +26,14 @@ def get_character_route(character_id: str, conn: DbConn):
 
 @router.post("/api/characters", response_model=CharacterResponse)
 def post_character(conn: DbConn, body: CharacterCreateRequest):
-    return create_catalog_item(conn, CatalogKind.CHARACTER, body.to_dict())
+    return create_character(conn, body.to_dict())
 
 
 @router.put("/api/characters/{character_id}", response_model=CharacterResponse)
 def put_character(character_id: str, conn: DbConn, body: CharacterUpdateRequest):
-    return update_catalog_item(conn, CatalogKind.CHARACTER, character_id, body.to_dict())
+    return update_character(conn, character_id, body.to_dict())
 
 
 @router.delete("/api/characters/{character_id}", response_model=CatalogDeleteResponse)
 def delete_character(character_id: str, conn: DbConn):
-    return delete_catalog_item(conn, CatalogKind.CHARACTER, character_id)
+    return delete_character_use_case(conn, character_id)
