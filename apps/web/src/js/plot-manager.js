@@ -1,6 +1,6 @@
 import { apiBase } from "./api.js";
 import { createCharacter, deleteCharacter, deletePlot, findPlot, firstPlotCharacter, loadCatalogKind, loadMorePlots, plotCharacters, updateCharacter, updatePlot, uploadCharacterAvatar } from "./catalog.js";
-import { $, bindGrowingTextarea, confirmDialog, el, parseJson, setChildren, toast } from "./dom.js";
+import { $, bindGrowingTextarea, confirmDelete, el, parseJson, setChildren, toast } from "./dom.js";
 import { bindCharacterEditor, characterValues, renderCharacterEditor } from "./character-editor.js";
 import { activateFormTab, bindFormTabs } from "./form-tabs.js";
 import { bindGenrePicker, renderGenrePicker, selectedGenres } from "./genres.js";
@@ -150,7 +150,7 @@ async function saveManagedPlot() {
 async function deleteManagedPlot() {
   const id = state.managedPlotId;
   const plot = findPlot(id);
-  if (!id || !(await confirmDialog(`${plotTitle(plot)} 플롯을 삭제할까요?`, { danger: true }))) return;
+  if (!id || !(await confirmDelete(`${plotTitle(plot)} 플롯을 삭제할까요?`))) return;
   try {
     await deletePlot(id);
     state.managedPlotId = null;

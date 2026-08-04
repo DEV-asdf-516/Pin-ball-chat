@@ -2,7 +2,7 @@ import { api, apiBase, sseError, streamSse } from "./api.js";
 import { activeConversation, conversationProfileChanged, messagesLoaded, userProfileDeleted, userProfileUpdated } from "./actions.js";
 import { firstPlotCharacter } from "./catalog.js";
 import { messagesNearLatest, settleMessagesAtLatest } from "./chat-scroll.js";
-import { $, closeDropdowns, confirmDialog, el, parseJson, setChildren, toast, toggleDropdown } from "./dom.js";
+import { $, closeDropdowns, confirmDelete, el, parseJson, setChildren, toast, toggleDropdown } from "./dom.js";
 import { renderMarkdown } from "./markdown.js";
 import { providerErrorMessage } from "./provider-errors.js";
 import { generationBody } from "./settings.js";
@@ -452,7 +452,7 @@ async function saveUserProfileEdit() {
 
 async function deleteUserProfileEdit() {
   const id = $("editUserProfileId").value.trim();
-  if (!id || !(await confirmDialog(`${userProfileName(state.catalog.users.byId.get(id))} 프로필을 삭제할까요?`, { danger: true }))) return;
+  if (!id || !(await confirmDelete(`${userProfileName(state.catalog.users.byId.get(id))} 프로필을 삭제할까요?`))) return;
   try {
     await api(`/api/user-profiles/${encodeURIComponent(id)}`, { method: "DELETE" });
     userProfileDeleted(id);

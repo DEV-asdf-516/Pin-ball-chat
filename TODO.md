@@ -3,7 +3,7 @@
 ## 원하는 기능
 - [ ] 플롯에 캐릭터 말투 추가 (UI에는 노출 안됨, 제작 폼에서만 노출)
 - [ ] provider 세션 재사용으로 입력 토큰·지연 최적화 (SQLite 대화를 원본으로 유지하고 세션은 수정·모델/프롬프트 변경 시 폐기 가능한 캐시로 취급)
-- [ ] 플롯 내 다중 캐릭터 추가 지원
+- [x] 플롯 내 다중 캐릭터 추가 지원
 
 ## (CODEX) UI
 - [x] 대화 목록 카드 제목과 채팅방 헤더 제목을 길게 누르면 메뉴 없이 바로 긴 둥근 인라인 편집칸 표시 (바깥 클릭 저장, Enter 저장, Esc 또는 뒤로가기 취소)
@@ -37,7 +37,7 @@
 - [x] 메시지 삭제 UI (`DELETE /api/messages/{messageId}`)
 - [x] 메시지 일괄 삭제 UI (`POST /api/messages/batch-delete`)
 - [x] 턴 후보 목록 조회 UI (`GET /api/turns/{turnId}/generations`; 새로고침 후 후보 전환 복원 등)
-- [ ] 콘텐츠 동적 관리 UI (캐릭터/선호 CRUD API는 이미 있음 — `POST/PUT/DELETE /api/characters`, `/api/preference-profiles`; UI만 없음)
+- [ ] 콘텐츠 동적 관리 UI (선호 CRUD API는 이미 있음 — `POST/PUT/DELETE /api/preference-profiles`; UI만 없음)
 
 ## README
 - [ ] UI 스크린샷 추가

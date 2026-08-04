@@ -2,7 +2,7 @@ import { activeConversation } from "./actions.js";
 import { api } from "./api.js";
 import { plotCharacters } from "./catalog.js";
 import { loadMessages } from "./chat.js";
-import { $, confirmDialog, el, parseJson, setChildren, toast } from "./dom.js";
+import { $, confirmDestructive, confirmDialog, el, parseJson, setChildren, toast } from "./dom.js";
 import { state } from "./state.js";
 
 let selection = null;
@@ -48,10 +48,9 @@ async function openImport() {
       cancelText: "폐기",
     });
     if (!resume) {
-      const discard = await confirmDialog("기존 불러오기 세션을 폐기하고 새로 시작할까요?", {
+      const discard = await confirmDestructive("기존 불러오기 세션을 폐기하고 새로 시작할까요?", {
         title: "세션 폐기",
         okText: "폐기",
-        danger: true,
       });
       if (!discard) {
         closeImport();
@@ -371,7 +370,7 @@ async function uploadSelection() {
 
 async function cancelImport() {
   if (uploading || session) {
-    const discard = await confirmDialog("업로드한 파트를 폐기할까요?", { okText: "폐기", danger: true });
+    const discard = await confirmDestructive("업로드한 파트를 폐기할까요?", { okText: "폐기" });
     if (!discard) return;
     if (session) {
       try {

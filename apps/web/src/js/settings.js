@@ -1,7 +1,7 @@
 import { apiBase, api } from "./api.js";
 import { activeConversation } from "./actions.js";
 import { keys, modelOptions } from "./config.js";
-import { $, closeDropdowns, confirmDialog, el, setChildren, toast, toggleDropdown } from "./dom.js";
+import { $, closeDropdowns, confirmDestructive, el, setChildren, toast, toggleDropdown } from "./dom.js";
 import { providerErrorMessage } from "./provider-errors.js";
 import { state } from "./state.js";
 
@@ -530,7 +530,7 @@ function providerFailureMessage(error) {
 async function logoutCodexConnection(button = null) {
   if (button) button.disabled = true;
   try {
-    if (!(await confirmDialog("Codex 연결을 해제할까요?", { danger: true }))) return;
+    if (!(await confirmDestructive("Codex 연결을 해제할까요?", { title: "연결 해제", okText: "해제" }))) return;
     await api("/api/provider-connections/openai-codex", { method: "DELETE" });
     pendingProviderLogins.delete("openai-codex");
     await openProviderSettings("openai-codex");
@@ -544,7 +544,7 @@ async function logoutCodexConnection(button = null) {
 async function logoutClaudeConnection(button = null) {
   if (button) button.disabled = true;
   try {
-    if (!(await confirmDialog("Claude Code 연결을 해제할까요?", { danger: true }))) return;
+    if (!(await confirmDestructive("Claude Code 연결을 해제할까요?", { title: "연결 해제", okText: "해제" }))) return;
     await api("/api/provider-connections/claude-cli", { method: "DELETE" });
     pendingProviderLogins.delete("claude-cli");
     await openProviderSettings("claude-cli");
@@ -558,7 +558,7 @@ async function logoutClaudeConnection(button = null) {
 async function cancelProviderLogin(provider, button = null) {
   if (button) button.disabled = true;
   try {
-    if (!(await confirmDialog("진행 중인 로그인을 취소할까요?", { danger: true }))) return;
+    if (!(await confirmDestructive("진행 중인 로그인을 취소할까요?", { title: "로그인 취소", okText: "취소" }))) return;
     await api(`/api/provider-connections/${encodeURIComponent(provider)}`, { method: "DELETE" });
     pendingProviderLogins.delete(provider);
     toast("로그인을 취소했습니다.");

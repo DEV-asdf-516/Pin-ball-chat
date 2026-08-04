@@ -5,7 +5,7 @@ import { bindUserProfileSheet, cancelComposerEdit, canResendEditedUserMessage, c
 import { scrollMessagesToLatest, syncLatestMessageButton } from "./chat-scroll.js";
 import { keys } from "./config.js";
 import * as conversations from "./conversations.js";
-import { $, bindGrowingTextarea, closeDropdowns, confirmDialog, el, openDropdown, parseJson, toast, toggleDropdown } from "./dom.js";
+import { $, bindGrowingTextarea, closeDropdowns, confirmDelete, el, openDropdown, parseJson, toast, toggleDropdown } from "./dom.js";
 import { activateFormTab, bindFormTabs } from "./form-tabs.js";
 import { bindGenrePicker, renderGenrePicker, selectedGenres } from "./genres.js";
 import { bindIntroEditor, introValue, renderIntroEditor } from "./intro-editor.js";
@@ -131,7 +131,7 @@ function bindCatalog() {
     if (deleteBtn) {
       event.stopPropagation();
       const conversationId = deleteBtn.dataset.deleteConversation;
-      if (!(await confirmDialog("이 대화를 삭제할까요? 메시지와 생성 기록도 함께 삭제됩니다.", { danger: true }))) return;
+      if (!(await confirmDelete("이 대화를 삭제할까요? 메시지와 생성 기록도 함께 삭제됩니다."))) return;
       try {
         await conversations.deleteConversation(conversationId);
         toast("대화를 삭제했습니다.");
@@ -388,8 +388,8 @@ function bindChat() {
       if (btn.dataset.action === "variant-next") await showAssistantVariant(btn.closest(".message-group.assistant"), 1);
       if (btn.dataset.action === "edit-generation") await editGeneration(btn.dataset.gen);
       if (btn.dataset.action === "edit-user") await editUserMessage(btn.dataset.message);
-      if (btn.dataset.action === "delete-message" && await confirmDialog("이 메시지를 삭제할까요?", { danger: true })) await deleteMessage(btn.dataset.message);
-      if (btn.dataset.action === "batch-delete-message" && await confirmDialog("이 메시지부터 아래 대화를 삭제할까요?", { danger: true })) await deleteMessagesFrom(btn.dataset.message);
+      if (btn.dataset.action === "delete-message" && await confirmDelete("이 메시지를 삭제할까요?")) await deleteMessage(btn.dataset.message);
+      if (btn.dataset.action === "batch-delete-message" && await confirmDelete("이 메시지부터 아래 대화를 삭제할까요?")) await deleteMessagesFrom(btn.dataset.message);
       if (btn.dataset.action === "copy") {
         const message = btn.closest("[data-content]");
         const text = message?.dataset.content || "";

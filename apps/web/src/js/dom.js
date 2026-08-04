@@ -56,6 +56,19 @@ export function confirmDialog(message, options = {}) {
   });
 }
 
+export function confirmDestructive(message, options = {}) {
+  return confirmDialog(message, { ...options, danger: true });
+}
+
+export function confirmDelete(message, options = {}) {
+  return confirmDestructive(message, {
+    title: "삭제 확인",
+    okText: "삭제",
+    cancelText: "취소",
+    ...options,
+  });
+}
+
 export function promptDialog(title, value = "", options = {}) {
   return openDialog({
     title,
