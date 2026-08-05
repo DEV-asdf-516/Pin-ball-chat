@@ -12,6 +12,7 @@ html {
 
 body {
   margin: 0;
+  height: 100dvh;
   min-height: 100dvh;
   background: var(--app-bg);
   color: var(--text);
@@ -23,6 +24,12 @@ body {
 
 :root[data-chat-active="true"] body {
   overscroll-behavior-y: none;
+}
+
+:root[data-keyboard-open="true"] body {
+  height: var(--visual-viewport-height, 100dvh);
+  min-height: var(--visual-viewport-height, 100dvh);
+  overflow: hidden;
 }
 
 button,

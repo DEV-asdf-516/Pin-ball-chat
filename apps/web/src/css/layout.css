@@ -1,7 +1,7 @@
 .shell {
   width: min(100vw, 430px);
   min-width: min(100vw, 320px);
-  height: min(100dvh, var(--visual-viewport-height, 100dvh));
+  height: var(--visual-viewport-height, 100dvh);
   background: var(--shell-bg);
   border-left: 1px solid var(--border);
   border-right: 1px solid var(--border);

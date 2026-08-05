@@ -11,5 +11,7 @@ export const modelOptions = {
   ollama: [],
   "openai-codex": [],
   "claude-cli": [],
+  openai: [],
+  anthropic: [],
   gemini: [],
 };

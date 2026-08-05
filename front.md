@@ -23,7 +23,7 @@
 - 빈 입력 전송: 마지막이 user면 재전송, assistant면 추천 답변 요청.
 
 ## 설정
-- localStorage는 `pinballchat.{theme,apiBase,recentPlots}`만. 모델/생성 설정 저장 금지.
+- localStorage는 `pinballchat.{theme,apiBase,recentPlots,route}`만. 모델/생성 설정 저장 금지.
 - 모델 설정은 대화별 API(`/api/conversations/{id}/settings`)만. 저장값이 provider 기본값보다 우선.
 - 모델 목록은 `GET /api/models?provider=...`. 직접 입력 필드 없음.
 

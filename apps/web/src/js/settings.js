@@ -12,6 +12,8 @@ const providerGenerationDefaults = {
   ollama: { numPredict: 1500, numCtx: 8192 },
   "openai-codex": { numPredict: 4096, numCtx: 65536 },
   "claude-cli": { numPredict: 8192, numCtx: 65536 },
+  openai: { numPredict: 8192, numCtx: 65536 },
+  anthropic: { numPredict: 8192, numCtx: 65536 },
   gemini: { numPredict: 8192, numCtx: 65536 },
 };
 const defaultGenerationSettings = {
@@ -34,7 +36,7 @@ const renderedProviderConnections = new Map();
 const renderedProviderStatuses = new Map();
 const labels = {
   themeSelect: { system: "시스템", light: "밝게", dark: "어둡게" },
-  providerSelect: { "local-stub": "로컬 테스트", ollama: "Ollama", "openai-codex": "Codex", "claude-cli": "Claude Code", gemini: "Gemini" },
+  providerSelect: { "local-stub": "로컬 테스트", ollama: "Ollama", "openai-codex": "Codex", "claude-cli": "Claude Code", openai: "OpenAI API", anthropic: "Anthropic API", gemini: "Gemini API" },
 };
 
 export function applyTheme(theme = localStorage.getItem(keys.theme) || "system") {
@@ -307,8 +309,7 @@ async function openProviderConnections() {
   try {
     const data = await api("/api/provider-connections");
     if (viewVersion !== providerViewVersion || activeProviderSettings !== null || !$("providerSettingsSheet").classList.contains("open")) return;
-    const providers = (Array.isArray(data?.providers) ? data.providers : [])
-      .filter((connection) => !["openai", "anthropic", "gemini"].includes(connection.provider));
+    const providers = Array.isArray(data?.providers) ? data.providers : [];
     setChildren(root, providers.map(providerConnectionRow));
   } catch {
     if (viewVersion !== providerViewVersion || activeProviderSettings !== null || !$("providerSettingsSheet").classList.contains("open")) return;
@@ -337,7 +338,7 @@ function providerConnectionRow(connection) {
 
 function providerLabel(provider) {
   return {
-    "openai-codex": "Codex", "claude-cli": "Claude Code", gemini: "Gemini API", ollama: "Ollama",
+    "openai-codex": "Codex", "claude-cli": "Claude Code", openai: "OpenAI API", anthropic: "Anthropic API", gemini: "Gemini API", ollama: "Ollama",
   }[provider] || provider;
 }
 
@@ -347,7 +348,7 @@ function connectionStatus(status) {
 
 function providerActionText(connection) {
   if (connection.status === "connected") return "설정 열기";
-  if (connection.actionRequired === "api_key_required") return "환경변수 API 키 필요";
+  if (connection.actionRequired === "api_key_required") return "API 키가 필요합니다";
   if (connection.actionRequired === "provider_timeout") return "연결 확인 시간이 초과되었습니다";
   if (connection.actionRequired === "provider_runtime_incompatible") return "공식 런타임 버전을 확인하세요";
   if (connection.actionRequired === "provider_runtime_crashed") return "공식 런타임이 비정상 종료되었습니다";
@@ -448,8 +449,49 @@ function renderProviderSettings(connection) {
       children.push(cancel);
       scheduleProviderLoginRefresh("claude-cli");
     } else if (!connected) children.push(el("span", { className: "meta", text: "로그인 창 또는 인증 URL에서 Claude Code 계정으로 인증하세요." }));
-  } else if (connection.actionRequired === "api_key_required") {
-    children.push(el("span", { className: "meta", text: "이 앱은 API 키를 저장하지 않습니다. Docker 환경변수에 API 키를 설정한 뒤 다시 확인하세요." }));
+  } else if (["openai", "anthropic", "gemini"].includes(connection.provider)) {
+    const keyStatus = connection.keySource === "stored"
+      ? "저장된 키 사용 중"
+      : connection.keySource === "env" ? "환경변수 키 사용 중" : "API 키 필요";
+    children.push(el("span", { className: "meta", text: keyStatus }));
+
+    const input = el("input", {
+      type: "password",
+      attrs: { autocomplete: "off", placeholder: "API 키 붙여넣기" },
+    });
+    const saveButton = el("button", { type: "button", className: "primary", text: "키 저장" });
+    saveButton.onclick = async () => {
+      try {
+        await api(`/api/provider-connections/${encodeURIComponent(connection.provider)}/key`, {
+          method: "PUT",
+          body: JSON.stringify({ key: input.value }),
+        });
+        input.value = "";
+        await invalidateProviderModels(connection.provider);
+        await testProviderConnection(connection.provider, saveButton);
+        await openProviderSettings(connection.provider);
+      } catch (err) {
+        toast(`키 저장 실패: ${providerFailureMessage(err)}`);
+      }
+    };
+    children.push(input, saveButton);
+
+    if (connection.keySource === "stored") {
+      const deleteButton = el("button", { type: "button", className: "danger", text: "저장된 키 삭제" });
+      deleteButton.onclick = async () => {
+        deleteButton.disabled = true;
+        try {
+          await api(`/api/provider-connections/${encodeURIComponent(connection.provider)}/key`, { method: "DELETE" });
+          await invalidateProviderModels(connection.provider);
+          await openProviderSettings(connection.provider);
+        } catch (err) {
+          toast(`키 삭제 실패: ${providerFailureMessage(err)}`);
+        } finally {
+          if (deleteButton.isConnected) deleteButton.disabled = false;
+        }
+      };
+      children.push(deleteButton);
+    }
   } else if (connection.provider !== "ollama") {
     children.push(el("span", { className: "meta", text: providerActionText(connection) }));
   }
@@ -516,6 +558,13 @@ async function testProviderConnection(provider, button) {
     toast(`연결 확인 실패: ${providerFailureMessage(err)}`);
   } finally {
     button.disabled = false;
+  }
+}
+
+async function invalidateProviderModels(provider) {
+  loadedModelOptions.delete(provider);
+  if (state.settings.provider === provider && $("settingsSheet").classList.contains("open")) {
+    await refreshModelOptions();
   }
 }
 

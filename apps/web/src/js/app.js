@@ -593,14 +593,15 @@ function bindComposerResize() {
   handle.onpointerdown = (event) => {
     event.preventDefault();
     const startY = event.clientY;
-    const startMax = state.composerMaxHeight;
+    const startHeight = state.composerHeight || composerMinHeight(input);
     const minHeight = composerMinHeight(input);
     let dismissed = false;
+    handle.setPointerCapture?.(event.pointerId);
 
     const onMove = (moveEvent) => {
       moveEvent.preventDefault();
       if (dismissed) return;
-      const next = startMax + startY - moveEvent.clientY;
+      const next = startHeight + startY - moveEvent.clientY;
       if (next <= minHeight + 32) {
         dismissed = true;
         if (state.composerEdit) cancelComposerEdit();
@@ -615,6 +616,7 @@ function bindComposerResize() {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onEnd);
       window.removeEventListener("pointercancel", onEnd);
+      if (handle.hasPointerCapture?.(event.pointerId)) handle.releasePointerCapture(event.pointerId);
     };
     window.addEventListener("pointermove", onMove, { passive: false });
     window.addEventListener("pointerup", onEnd);
@@ -702,6 +704,7 @@ function resizeComposerInput() {
 }
 
 async function init() {
+  const savedRoute = parseJson(localStorage.getItem(keys.route));
   mountApp();
   showScreen("plots", { history: "replace" });
   bindMobileViewport();
@@ -732,7 +735,7 @@ async function init() {
     await loadCatalog();
   } catch {}
   await conversations.loadConversations();
-  await restoreRoute();
+  await restoreRoute(savedRoute);
   window.addEventListener("popstate", (event) => {
     const routeState = event.state?.pinballchat;
     if (!routeState) {

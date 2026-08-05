@@ -32,11 +32,15 @@ def drop_ooc_only_turns(messages: Sequence) -> list:
     # 그에 대한 assistant 응답(같은 turn_id)을 통째로 요약 대상에서 제외한다.
     ooc_only_turn_ids: set = set()
     for message in messages:
+        
         if message["role"] != "user" or message["turn_id"] is None:
             continue
+        
         body, ooc = extract_ooc(str(message["content"] or ""))
+        
         if ooc and not body.strip():
             ooc_only_turn_ids.add(message["turn_id"])
+    
     return [message for message in messages if message["turn_id"] not in ooc_only_turn_ids]
 
 
@@ -46,6 +50,7 @@ def take_summary_chunk(messages: Sequence, user_name: str, char_limit: int) -> l
 
     chunk: list = []
     used_chars = 0
+    
     for message in messages:
         rendered: str = render_summary_message(message, user_name)
         added_chars: int = len(rendered) + (1 if chunk else 0)
