@@ -34,6 +34,7 @@ let modelLoadVersion = 0;
 let conversationSettingsVersion = 0;
 const renderedProviderConnections = new Map();
 const renderedProviderStatuses = new Map();
+const providerConnectionOrder = ["openai", "anthropic", "gemini", "ollama", "openai-codex", "claude-cli"];
 const labels = {
   themeSelect: { system: "시스템", light: "밝게", dark: "어둡게" },
   providerSelect: { "local-stub": "로컬 테스트", ollama: "Ollama", "openai-codex": "Codex", "claude-cli": "Claude Code", openai: "OpenAI API", anthropic: "Anthropic API", gemini: "Gemini API" },
@@ -309,7 +310,13 @@ async function openProviderConnections() {
   try {
     const data = await api("/api/provider-connections");
     if (viewVersion !== providerViewVersion || activeProviderSettings !== null || !$("providerSettingsSheet").classList.contains("open")) return;
-    const providers = Array.isArray(data?.providers) ? data.providers : [];
+    const providers = (Array.isArray(data?.providers) ? data.providers : []).sort((left, right) => {
+      const leftIndex = providerConnectionOrder.indexOf(left.provider);
+      const rightIndex = providerConnectionOrder.indexOf(right.provider);
+      const leftRank = leftIndex === -1 ? providerConnectionOrder.length : leftIndex;
+      const rightRank = rightIndex === -1 ? providerConnectionOrder.length : rightIndex;
+      return leftRank - rightRank;
+    });
     setChildren(root, providers.map(providerConnectionRow));
   } catch {
     if (viewVersion !== providerViewVersion || activeProviderSettings !== null || !$("providerSettingsSheet").classList.contains("open")) return;
