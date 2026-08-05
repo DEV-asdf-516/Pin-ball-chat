@@ -9,10 +9,11 @@ __MACOSX/
 .venv/
 venv/
 
-.claude/
-!.claude/hooks/**
-.codex/
-!.codex/hooks/**
+.claude/*
+!.claude/hooks/
+!.claude/skills/
+.codex/*
+!.codex/hooks/
 .vscode/
 .idea/
 docs/
@@ -25,3 +26,4 @@ data/
 /tmp/
 /scripts/*
 !/scripts/run_v01_pipeline.py
+.agent-work/
