@@ -10,7 +10,7 @@ from ai.specs import GenerateRequest, ProviderConnection, ProviderName
 from ai.providers.base import AIProvider
 from ai.providers.timing import log_stream_timing
 from ai.transport.sse import aiter_sse_events
-from util.env_util import require_env
+from ai.auth.api_key_store import resolve_api_key
 from util.safe_util import get_safe_dict, get_safe_str
 
 
@@ -35,7 +35,7 @@ class AnthropicProvider(AIProvider):
         return {
             "anthropic-version": ANTHROPIC_API_VERSION,
             "content-type": "application/json",
-            "x-api-key": require_env("ANTHROPIC_API_KEY"),
+            "x-api-key": resolve_api_key("ANTHROPIC_API_KEY"),
         }
 
     @log_stream_timing
@@ -92,4 +92,4 @@ class AnthropicProvider(AIProvider):
             return [m["id"] for m in res.json().get("data", [])]
 
     async def connection(self) -> ProviderConnection:
-        return self._connection(credential_type="authorization_key", auth_mode="anthropic_api_key", env_name="ANTHROPIC_API_KEY")
+        return self._api_key_connection(credential_type="authorization_key", auth_mode="anthropic_api_key", env_name="ANTHROPIC_API_KEY")

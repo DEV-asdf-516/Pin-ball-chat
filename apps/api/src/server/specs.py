@@ -223,6 +223,7 @@ class ProviderConnectionResponse(BaseModel):
     plan: str | None = None
     verification_url: str | None = Field(default=None, alias="verificationUrl")
     user_code: str | None = Field(default=None, alias="userCode")
+    key_source: str | None = Field(default=None, alias="keySource")
 
 
 class ProviderConnectionsResponse(BaseModel):
@@ -238,6 +239,10 @@ class ProviderLoginResponse(BaseModel):
 
 class ProviderLoginCodeRequest(CamelModel):
     code: str
+
+
+class ProviderKeyRequest(CamelModel):
+    key: str
 
 
 class ConversationResponse(BaseModel):

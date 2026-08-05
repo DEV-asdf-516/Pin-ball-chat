@@ -1,7 +1,7 @@
-import os
 from abc import ABC, abstractmethod
 from typing import AsyncIterator
 
+from ai.auth.api_key_store import stored_key_source
 from ai.errors import ProviderErrorCode, provider_failure_code
 from ai.specs import GenerateRequest, ProviderConnection, ProviderName
 from util.singleton import Singleton
@@ -19,8 +19,9 @@ class AIProvider(Singleton, ABC):
     async def connection(self) -> ProviderConnection:
         raise NotImplementedError(f"{self.name} does not support connection status")
 
-    def _connection(self, credential_type: str, auth_mode: str, env_name: str) -> ProviderConnection:
-        connected: bool = bool(os.environ.get(env_name, "").strip())
+    def _api_key_connection(self, credential_type: str, auth_mode: str, env_name: str) -> ProviderConnection:
+        key_source = stored_key_source(env_name)
+        connected = key_source is not None
 
         return ProviderConnection(
             provider=self.name,
@@ -28,6 +29,7 @@ class AIProvider(Singleton, ABC):
             action_required=None if connected else ProviderErrorCode.API_KEY_REQUIRED,
             credential_type=credential_type,
             resolved_auth_mode=auth_mode if connected else None,
+            key_source=key_source,
         )
 
     def _connection_from_error(self, credential_type: str, exc: Exception) -> ProviderConnection:

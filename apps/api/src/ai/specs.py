@@ -50,3 +50,4 @@ class ProviderConnection:
     plan: str | None = None
     verification_url: str | None = None
     user_code: str | None = None
+    key_source: str | None = None

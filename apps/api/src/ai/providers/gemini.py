@@ -11,7 +11,7 @@ from ai.specs import GenerateRequest, ProviderConnection, ProviderName
 from ai.providers.base import AIProvider
 from ai.providers.timing import log_stream_timing
 from ai.transport.sse import aiter_sse_events
-from util.env_util import require_env
+from ai.auth.api_key_store import resolve_api_key
 from util.safe_util import get_safe_dict, get_safe_list, get_safe_str
 
 _OK_FINISH_REASONS = ("STOP", "MAX_TOKENS", "FINISH_REASON_UNSPECIFIED")
@@ -59,7 +59,7 @@ class GeminiProvider(AIProvider):
         return f"{GEMINI_BASE_URL.rstrip('/')}/v1beta/models/{model_id}:{endpoint}{extra_query}"
 
     def _headers(self) -> dict:
-        return {"x-goog-api-key": require_env("GEMINI_API_KEY")}
+        return {"x-goog-api-key": resolve_api_key("GEMINI_API_KEY")}
 
     @log_stream_timing
     async def stream(self, req: GenerateRequest) -> AsyncIterator[str]:
@@ -99,4 +99,4 @@ class GeminiProvider(AIProvider):
             return [m["name"].removeprefix("models/") for m in res.json().get("models", [])]
 
     async def connection(self) -> ProviderConnection:
-        return self._connection(credential_type="authorization_key", auth_mode="gemini_api_key", env_name="GEMINI_API_KEY")
+        return self._api_key_connection(credential_type="authorization_key", auth_mode="gemini_api_key", env_name="GEMINI_API_KEY")

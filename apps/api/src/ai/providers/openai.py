@@ -10,7 +10,7 @@ from ai.specs import GenerateRequest, ProviderConnection, ProviderName
 from ai.providers.base import AIProvider
 from ai.providers.timing import log_stream_timing
 from ai.transport.sse import aiter_sse_events
-from util.env_util import require_env
+from ai.auth.api_key_store import resolve_api_key
 from util.safe_util import get_safe_dict, get_safe_str
 
 
@@ -35,7 +35,7 @@ class OpenAIProvider(AIProvider):
     name = ProviderName.OPENAI
 
     def _headers(self) -> dict:
-        return {"Content-Type": "application/json", "Authorization": f"Bearer {require_env('OPENAI_API_KEY')}"}
+        return {"Content-Type": "application/json", "Authorization": f"Bearer {resolve_api_key('OPENAI_API_KEY')}"}
 
     @log_stream_timing
     async def stream(self, req: GenerateRequest) -> AsyncIterator[str]:
@@ -83,4 +83,4 @@ class OpenAIProvider(AIProvider):
             return [m["id"] for m in res.json().get("data", [])]
 
     async def connection(self) -> ProviderConnection:
-        return self._connection(credential_type="authorization_key", auth_mode="openai_api_key", env_name="OPENAI_API_KEY")
+        return self._api_key_connection(credential_type="authorization_key", auth_mode="openai_api_key", env_name="OPENAI_API_KEY")
