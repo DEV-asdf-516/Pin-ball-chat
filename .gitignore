@@ -20,3 +20,8 @@ docs/
 *.sqlite
 *.sqlite3
 data/
+
+/examples/
+/tmp/
+/scripts/*
+!/scripts/run_v01_pipeline.py
