@@ -6,8 +6,10 @@ from pathlib import Path
 
 from ai.specs import Message, PromptTier
 from core.db import DATA_ROOT, RawSQL, fetch_all
+from domain.catalog.specs import DIALOGUE_BLOCK_ROLES
 from domain.conversations.reader import active_messages_sql
-from domain.prompts.context import RECENT_WINDOW, build_ctx, described, render_value, resolve_prompt_context, row_json, tag
+from domain.prompts.context import RECENT_WINDOW, PromptContext, attr_tag, build_ctx, described, render_value, resolve_prompt_context, row_json, tag
+from util.safe_util import get_safe_dict
 
 
 _OOC_PATTERN = re.compile(
@@ -121,31 +123,30 @@ def build_prompt(conn: sqlite3.Connection, conversation_id: str, user_message: s
     # TODO: preferences.json을 로어북처럼 쓰는 방식으로 나중에 다시 연결한다.
 
     system_prompt: dict = _system_prompt(tier)
-    conv, plot, chars, user = resolve_prompt_context(conn, conversation_id)
-    primary_char: dict = chars[0]
-    user_json: dict = row_json(user, "profile_json")
-    plot_json: dict = row_json(plot, "plot_json")
-    ctx: dict = build_ctx(plot, primary_char, user)
+    prompt_ctx: PromptContext = resolve_prompt_context(conn, conversation_id)
+    primary_char: dict = prompt_ctx.chars[0]
+    user_json: dict = row_json(prompt_ctx.user, "profile_json")
+    plot_json: dict = row_json(prompt_ctx.plot, "plot_json")
+    ctx: dict = build_ctx(prompt_ctx.plot, primary_char, prompt_ctx.user)
     warnings: list = []
 
-    user_source: str = source_for(user_json, user["source_text"])
-    plot_source: str = source_for(plot_json, plot["source_text"])
+    user_source: str = source_for(user_json, prompt_ctx.user["source_text"])
+    plot_source: str = source_for(plot_json, prompt_ctx.plot["source_text"])
 
     user_body, _ = extract_ooc(render_value(user_source, ctx, warnings))
     plot_body, _ = extract_ooc(render_value(plot_source, ctx, warnings))
     character_blocks: list[str] = []
-    for character in chars:
+
+    for character in prompt_ctx.chars:
         character_json: dict = row_json(character, "profile_json")
-        character_ctx: dict = build_ctx(plot, character, user)
+        character_ctx: dict = build_ctx(prompt_ctx.plot, character, prompt_ctx.user)
         character_source: str = source_for(character_json, character["source_text"])
         character_body, _ = extract_ooc(render_value(character_source, character_ctx, warnings))
         character_blocks.append(
-            f'<char name="{character_ctx["char"]}" role="assistant">\n{character_body}\n</char>'
+            attr_tag("char", {"name": character_ctx["char"], "role": "assistant"}, character_body)
         )
 
-    # regenerate 중엔 이 turn의 기존 candidate가 아직 rejected=1로 안 바뀐 상태라 active_messages_sql만으로는
-    # 안 걸러진다 — exclude_turn_id로 이 turn의 유저 메시지·이전 candidate를 recent에서 직접 빼고,
-    # 유저 메시지는 아래 current_input으로 다시 채운다.
+    # regenerate 중엔 rejected=1 반영 전이라 exclude_turn_id로 이 turn을 recent에서 직접 제외한다.
     recent: list[sqlite3.Row] = fetch_all(
         conn,
         RawSQL(active_messages_sql(
@@ -153,15 +154,18 @@ def build_prompt(conn: sqlite3.Connection, conversation_id: str, user_message: s
             extra_where="AND (:exclude_turn_id IS NULL OR m.turn_id IS NULL OR m.turn_id != :exclude_turn_id)",
             tail=f"LIMIT {RECENT_WINDOW}",
         )),
-        params={"conversation_id": conversation_id, "exclude_turn_id": exclude_turn_id},
+        params={
+            "conversation_id": conversation_id, 
+            "exclude_turn_id": exclude_turn_id
+        },
     )
 
     story_body: str = "\n\n".join([
         tag("title", ctx["plot"]),
         tag("information", plot_body),
         *character_blocks,
-        f'<char name="관찰자" role="assistant">\n{system_prompt["story"]["observer_char"]}\n</char>',
-        f'<user name="{ctx["user"]}" role="user">\n{user_body}\n</user>',
+        attr_tag("char", {"name": "관찰자", "role": "assistant"}, system_prompt["story"]["observer_char"]),
+        attr_tag("user", {"name": ctx["user"], "role": "user"}, user_body),
     ])
 
     system_text: str = render_value(_section_text(system_prompt, "system"), ctx, warnings)
@@ -170,13 +174,38 @@ def build_prompt(conn: sqlite3.Connection, conversation_id: str, user_message: s
         described(system_prompt["story"]["description"], "story", story_body),
     ]
 
-    if conv["summary_text"]:
-        sections.append(described(system_prompt["summary_description"], "summary", conv["summary_text"]))
+    if prompt_ctx.conv["summary_text"]:
+        sections.append(described(system_prompt["summary_description"], "summary", prompt_ctx.conv["summary_text"]))
 
     mandatory_rules_text: str = render_value(_section_text(system_prompt, "mandatory_rules"), ctx, warnings)
     output_format_text: str = render_value(_section_text(system_prompt, "output_format"), ctx, warnings)
+    sections.append(described(system_prompt["style"]["description"], "style", ""))
+
+    sample_blocks: list[str] = []
+    sample_dialogues: dict = get_safe_dict(plot_json, "sampleDialogues")
+    raw_blocks: object = sample_dialogues.get("blocks")
+    blocks: list[object] = raw_blocks if isinstance(raw_blocks, list) else []
+    
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") not in DIALOGUE_BLOCK_ROLES:
+            continue
+        
+        content: object = block.get("content")
+        
+        if not isinstance(content, str) or not content:
+            continue
+        
+        rendered: str = render_value(content, ctx, warnings)
+        sample_blocks.append(attr_tag("sample", {"role": block["type"]}, rendered))
+    
+    if sample_blocks:
+        sections.append(described(
+            system_prompt["sample_dialogues_description"], 
+            "sample_dialogues", 
+            "\n".join(sample_blocks))
+        )
+
     sections += [
-        described(system_prompt["style"]["description"], "style", ""),
         described(system_prompt["mandatory_rules"]["description"], "mandatory_rules", mandatory_rules_text),
         described(system_prompt["output_format"]["description"], "output_format", output_format_text),
     ]
@@ -185,6 +214,12 @@ def build_prompt(conn: sqlite3.Connection, conversation_id: str, user_message: s
 
     messages: list[Message] = [
         *[Message(role=r["role"], content=r["content"]) for r in reversed(recent)],
-        Message(role="user", content=described(system_prompt["current_input_description"], "current_input", user_input_interpretation(user_message, ctx, system_prompt))),
+        Message(
+            role="user", 
+            content=described(
+                system_prompt["current_input_description"], 
+                "current_input", 
+                user_input_interpretation(user_message, ctx, system_prompt))
+            ),
     ]
-    return BuiltPrompt(system=system, messages=messages, warnings=warnings, plot=plot, char=primary_char, user=user)
+    return BuiltPrompt(system=system, messages=messages, warnings=warnings, plot=prompt_ctx.plot, char=primary_char, user=prompt_ctx.user)

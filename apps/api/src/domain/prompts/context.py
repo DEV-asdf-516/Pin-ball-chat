@@ -1,6 +1,7 @@
 import json
 import re
 import sqlite3
+from typing import NamedTuple
 
 from core.db import Bind, OrderBy, ReadQuery, find_all, find_one
 from core.errors import get_or_raise
@@ -18,7 +19,14 @@ def row_json(row: sqlite3.Row | dict, key: str) -> dict:
     return json.loads(row[key])
 
 
-def resolve_prompt_context(conn: sqlite3.Connection, conversation_id: str) -> tuple[dict, dict, list[dict], dict]:
+class PromptContext(NamedTuple):
+    conv: dict
+    plot: dict
+    chars: list[dict]
+    user: dict
+
+
+def resolve_prompt_context(conn: sqlite3.Connection, conversation_id: str) -> PromptContext:
     conv_row: dict | None = find_one(conn, ReadQuery.by_id(CONVERSATIONS, conversation_id))
     conv: dict = get_or_raise(conv_row, "conversation not found")
 
@@ -37,7 +45,7 @@ def resolve_prompt_context(conn: sqlite3.Connection, conversation_id: str) -> tu
     user_row: dict | None = find_catalog_by_id(conn, CatalogKind.USER_PROFILE, conv["user_profile_id"])
     user: dict = get_or_raise(user_row, "conversation has no user_profile set (select one before chatting)")
 
-    return conv, plot, chars, user
+    return PromptContext(conv, plot, chars, user)
 
 
 def build_ctx(plot: dict, char: dict, user: dict) -> dict:
@@ -77,6 +85,11 @@ def render_value(value, ctx: dict, warnings: list) -> str:
 
 def tag(name: str, content: str) -> str:
     return f"<{name}>\n{content.strip()}\n</{name}>"
+
+
+def attr_tag(name: str, attrs: dict[str, str], content: str) -> str:
+    attrs_text: str = " ".join(f'{key}="{value}"' for key, value in attrs.items())
+    return f"<{name} {attrs_text}>\n{content.strip()}\n</{name}>"
 
 
 def described(description: str, name: str, content: str) -> str:

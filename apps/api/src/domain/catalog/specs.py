@@ -12,6 +12,9 @@ class CatalogKind(StrEnum):
     PREFERENCE = "preference"
 
 
+DIALOGUE_BLOCK_ROLES = ("assistant", "user")
+
+
 @dataclass(frozen=True)
 class CatalogSpec(TableSpec):
     dirname: str

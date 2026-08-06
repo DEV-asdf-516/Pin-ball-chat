@@ -162,6 +162,8 @@ function bindPlotCreate() {
   renderGenrePicker("plotCreateGenreList");
   bindIntroEditor("plotCreateIntroEditor");
   renderIntroEditor("plotCreateIntroEditor");
+  bindIntroEditor("plotCreateSampleEditor");
+  renderIntroEditor("plotCreateSampleEditor");
   bindGrowingTextarea($("plotCreateSource"));
   bindCharacterEditor("plotCreateCharacters");
   renderCharacterEditor("plotCreateCharacters");
@@ -184,6 +186,7 @@ function bindPlotCreate() {
     }));
     try {
       const intro = introValue("plotCreateIntroEditor");
+      const sampleDialogues = introValue("plotCreateSampleEditor");
       const plot = await createPlot({
         id,
         type: "plot",
@@ -192,6 +195,7 @@ function bindPlotCreate() {
         sourceText,
         characters: characterPayload,
         ...(intro ? { intro } : {}),
+        ...(sampleDialogues ? { sampleDialogues } : {}),
       });
       for (const [index, character] of characterPayload.entries()) {
         const file = characters[index].avatarFile;
@@ -203,6 +207,7 @@ function bindPlotCreate() {
       renderGenrePicker("plotCreateGenreList");
       renderCharacterEditor("plotCreateCharacters");
       renderIntroEditor("plotCreateIntroEditor");
+      renderIntroEditor("plotCreateSampleEditor");
       activateFormTab("plotCreateForm", "prompt");
       await openPlot(plot.id, null, plot);
       showScreen("detail");
@@ -227,6 +232,7 @@ function bindPlotFab() {
     renderCharacterEditor("plotCreateCharacters");
     renderGenrePicker("plotCreateGenreList");
     renderIntroEditor("plotCreateIntroEditor");
+    renderIntroEditor("plotCreateSampleEditor");
     activateFormTab("plotCreateForm", "prompt");
     showScreen("plotCreate");
   };

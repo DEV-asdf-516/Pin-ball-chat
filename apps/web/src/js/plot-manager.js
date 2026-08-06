@@ -131,12 +131,14 @@ async function saveManagedPlot() {
     }
 
     const intro = introValue("plotManageIntroEditor");
+    const sampleDialogues = introValue("plotManageSampleEditor");
     const plot = await updatePlot(id, {
       type: "plot",
       title: $("plotManageTitle").value.trim(),
       genre: selectedGenres("plotManageGenreList"),
       sourceText: $("plotManageSource").value,
       ...(intro ? { intro } : {}),
+      ...(sampleDialogues ? { sampleDialogues } : {}),
     });
     state.managedPlotId = plot.id;
     renderPlotManager();
@@ -191,6 +193,10 @@ function renderPlotEditForm(id) {
           el("h2", { text: "등장인물" }),
           el("div", { id: "plotManageCharacters", className: "character-editor" }),
         ]),
+        el("section", { className: "form-card" }, [
+          el("h2", { text: "대화 샘플" }),
+          el("div", { id: "plotManageSampleEditor", className: "intro-editor" }),
+        ]),
       ]),
       el("div", { dataset: { formPanel: "intro" }, attrs: { hidden: "" } }, [
         el("section", { className: "form-card" }, [
@@ -212,6 +218,8 @@ function renderPlotEditForm(id) {
   bindGenrePicker("plotManageGenreList");
   renderIntroEditor("plotManageIntroEditor", plotData.intro);
   bindIntroEditor("plotManageIntroEditor");
+  renderIntroEditor("plotManageSampleEditor", plotData.sampleDialogues);
+  bindIntroEditor("plotManageSampleEditor");
   activateFormTab("plotManageEditMount", "prompt");
 }
 

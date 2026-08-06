@@ -6,7 +6,7 @@ from pathlib import Path
 from core.db import DATA_ROOT, Bind, WriteQuery, delete, upsert
 from core.errors import ensure
 from domain.catalog.reader import is_catalog_exists, find_catalog_by_id
-from domain.catalog.specs import FORWARD_REFS, REFERENCED_BY, SPEC_BY_KIND, CatalogKind, CatalogPayload, CatalogSpec, parse_catalog_data
+from domain.catalog.specs import DIALOGUE_BLOCK_ROLES, FORWARD_REFS, REFERENCED_BY, SPEC_BY_KIND, CatalogKind, CatalogPayload, CatalogSpec, parse_catalog_data
 from util.catalog_util import LoadedCatalog, load_catalog_file, write_catalog_file
 from util.safe_util import get_safe_list, get_safe_tuple
 from util.time_util import utc_now_string
@@ -29,11 +29,32 @@ def _validate_intro(data: dict) -> None:
 
     if not isinstance(blocks, list) or not blocks:
         raise ValueError("intro.blocks must be a non-empty array")
+    
     for block in blocks:
-        if not isinstance(block, dict) or block.get("type") not in ("assistant", "user"):
+        if not isinstance(block, dict) or block.get("type") not in DIALOGUE_BLOCK_ROLES:
             raise ValueError("intro block type must be 'assistant' or 'user'")
         if not block.get("content"):
             raise ValueError("intro block content must not be empty")
+
+
+def _validate_sample_dialogues(catalog_data: dict) -> None:
+    sample_dialogues: object = catalog_data.get("sampleDialogues")
+
+    if sample_dialogues is None:
+        return
+    if not isinstance(sample_dialogues, dict):
+        raise ValueError("sampleDialogues must be an object")
+
+    blocks: object = sample_dialogues.get("blocks", [])
+    if not isinstance(blocks, list):
+        raise ValueError("sampleDialogues.blocks must be an array")
+    block: object
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") not in DIALOGUE_BLOCK_ROLES:
+            raise ValueError("sampleDialogues block type must be 'assistant' or 'user'")
+        content: object = block.get("content")
+        if not isinstance(content, str) or not content:
+            raise ValueError("sampleDialogues block content must be a non-empty string")
 
 
 def catalog_file_path(kind: CatalogKind, item_id: str, root: Path) -> Path:
@@ -81,6 +102,7 @@ def create_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, data: dict,
 
     if kind == CatalogKind.PLOT:
         _validate_intro(data)
+        _validate_sample_dialogues(data)
 
     payload: CatalogPayload = parse_catalog_data(kind, data)
 
@@ -121,6 +143,7 @@ def update_catalog_item(conn: sqlite3.Connection, kind: CatalogKind, item_id: st
 
     if kind == CatalogKind.PLOT:
         _validate_intro(data)
+        _validate_sample_dialogues(data)
 
     payload: CatalogPayload = parse_catalog_data(kind, data)
 

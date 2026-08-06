@@ -80,6 +80,7 @@ class PromptTierTests(unittest.TestCase):
             "current_input_description": "input",
             "empty_input_directive": "empty",
             "summary_description": "summary",
+            "sample_dialogues_description": "samples",
         }
 
         with tempfile.TemporaryDirectory() as tmpdir:

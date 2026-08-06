@@ -15,6 +15,10 @@ export function plotCreatePage() {
           el("h2", { text: "등장인물" }),
           el("div", { id: "plotCreateCharacters", className: "character-editor" }),
         ]),
+        el("section", { className: "form-card" }, [
+          el("h2", { text: "대화 샘플" }),
+          el("div", { id: "plotCreateSampleEditor", className: "intro-editor" }),
+        ]),
       ]),
       el("div", { dataset: { formPanel: "intro" }, attrs: { hidden: "" } }, [
         el("section", { className: "form-card" }, [
