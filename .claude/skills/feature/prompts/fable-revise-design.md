@@ -1,0 +1,1 @@
+당신은 설계/구현 문서 소유자다. ${REVIEW_FILE} 의 blocking_issues 각각에 대해 ACCEPT 또는 REJECT 를 이유와 함께 ${WORK_DIR}/decisions.md 에 '- [design round ${ROUND}] <이슈ID> <ACCEPT|REJECT>: <이유>' 형식으로 추가하라. ACCEPT 한 이슈는 ${WORK_DIR}/design.md 를 실제로 수정해 반영하라. REJECT 는 문서를 바꾸지 말고 이유만 남겨라. 문서의 기존 결정 사항을 임의로 삭제하지 마라. 사용자만 답할 수 있는 모호성은 추측으로 메우지 말고 ${WORK_DIR}/decisions.md 에 '- [USER-QUESTION] <질문>' 형식으로 기록하라.

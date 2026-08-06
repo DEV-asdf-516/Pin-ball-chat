@@ -24,7 +24,7 @@ CLAUDE_BIN="claude"
 CODEX_BIN="codex"
 
 # --- 수렴/안전 한도 ---
-MAX_SPEC_ROUNDS=3        # 명세 합의 최대 라운드
+MAX_SPEC_ROUNDS=3        # 문서 합의 최대 라운드 (design/impl 문서별 각각 적용)
 MAX_IMPL_ROUNDS=2        # 구현 리뷰 최대 라운드
 MAX_TEST_RETRIES=1       # 최종 테스트 실패 시 Luna 재수정 허용 횟수
 
@@ -38,9 +38,22 @@ LINT_CMD="venv/bin/python -m compileall -q apps/api/src"
 # --- 워커에게 매 턴 적용할 규칙 파일 (system prompt로 주입) ---
 CORE_RULES_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../hooks" && pwd)/core_rules.md"
 
+# --- 페르소나 프롬프트 템플릿 디렉터리 ---
+PROMPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/prompts"
+
 # =============================================================
 # 헬퍼
 # =============================================================
+
+# 페르소나 템플릿 렌더링: 지정한 변수만 치환한다.
+# envsubst '${WORK_DIR} ${PREV_CONTEXT}' 방식이라 본문의 다른 '$' 문자는 안전.
+# 호출 전에 var_list 의 변수들을 export 해 두어야 한다.
+render_prompt() {
+  local template_name="$1" var_list="$2"
+  local template_file="$PROMPTS_DIR/$template_name"
+  [ -f "$template_file" ] || { echo "[FAIL] 프롬프트 템플릿 없음: $template_file" >&2; return 1; }
+  envsubst "$var_list" < "$template_file"
+}
 
 # 역할별 세션 재사용: 첫 호출은 --session-id <새 UUID>, 이후엔 --resume.
 # 라운드 사이 저장소 재탐색을 없애고 프롬프트 캐시를 살리기 위함.

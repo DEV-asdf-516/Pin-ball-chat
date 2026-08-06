@@ -11,9 +11,10 @@ set -euo pipefail
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$SKILL_DIR/config.sh"
 
-for bin in "$CLAUDE_BIN" jq uuidgen; do
+for bin in "$CLAUDE_BIN" jq uuidgen envsubst; do
   command -v "$bin" >/dev/null 2>&1 || { echo "[FAIL] '$bin' 미설치. 중단." >&2; exit 1; }
 done
+[ -f "$WORK_DIR/implementation.md" ] || { echo "[FAIL] $WORK_DIR/implementation.md 없음. 구현 문서 합의(Phase 1.5)가 선행되어야 함." >&2; exit 1; }
 CORE_RULES="$(cat "$CORE_RULES_FILE")"
 SCHEMA_FILE="$SKILL_DIR/schemas/impl-review.schema.json"
 [ -f "$SCHEMA_FILE" ] || { echo "[FAIL] 스키마 없음: $SCHEMA_FILE" >&2; exit 1; }
@@ -41,13 +42,15 @@ for round in $(seq 1 $((MAX_IMPL_ROUNDS + 1))); do
   git diff HEAD -- > "$diff_file"
   git status --short > "$status_file"
 
+  export WORK_DIR DIFF_FILE="$diff_file" STATUS_FILE="$status_file"
+  review_prompt="$(render_prompt sonnet-review.md '${WORK_DIR} ${DIFF_FILE} ${STATUS_FILE}')"
   review_session=$(claude_session_args sonnet-review)
   "$CLAUDE_BIN" -p $review_session --model "$SONNET_MODEL" --effort "$CLAUDE_EFFORT" \
     --append-system-prompt "$CORE_RULES" \
     --tools "Read,Grep,Glob" \
     --disallowedTools "Bash,Edit,Write,NotebookEdit" \
     --json-schema "$(cat "$SCHEMA_FILE")" --output-format json \
-    "당신은 코드 리뷰어다. 이 실행에는 읽기 도구만 있다 (수정은 다음 단계에서 직접 하게 된다). 변경 내역은 $diff_file, 파일 상태는 $status_file 에 준비되어 있고, 상태에 '??'로 표시된 untracked 신규 파일은 직접 읽어라. $WORK_DIR/specification.md 를 기준으로 이번 구현을 리뷰하라. 명세 위반, 버그, 누락된 테스트, 필요한 리팩터링을 issues 에 넣어라. 단순 취향은 제외." \
+    "$review_prompt" \
     > "$review.raw" || { echo "[FAIL] claude 실행 실패 (모델 '$SONNET_MODEL' 확인)"; exit 1; }
   claude_session_commit sonnet-review
   log_claude_usage "impl-review-a$attempt_tag-round-$tag" "$review.raw"
@@ -75,11 +78,13 @@ for round in $(seq 1 $((MAX_IMPL_ROUNDS + 1))); do
   # 리뷰와 다른 세션을 이어간다 — 실행 비용은 캐시로 줄이되 승인 독립성은 유지
   echo "--- Sonnet 이 이슈를 직접 수정합니다 ---"
   fix_result="$ATTEMPT_DIR/sonnet-fix-round-$tag.raw"
+  export WORK_DIR REVIEW_FILE="$review" TEST_CMD
+  fix_prompt="$(render_prompt sonnet-fix.md '${WORK_DIR} ${REVIEW_FILE} ${TEST_CMD}')"
   fix_session=$(claude_session_args sonnet-fix)
   "$CLAUDE_BIN" -p $fix_session --model "$SONNET_MODEL" --effort "$CLAUDE_EFFORT" --permission-mode acceptEdits \
     --append-system-prompt "$CORE_RULES" \
     --allowedTools "Bash" --output-format json \
-    "당신은 리뷰어 겸 수정자다. $review 의 issues 를 하나씩 직접 수정하라. 이슈 해결에 필요한 리팩터링은 허용하지만 명세($WORK_DIR/specification.md) 위반과 무관한 범위 확장은 금지. 명세에 근거해 반박할 이슈는 수정하지 말고 $WORK_DIR/decisions.md 에 이유를 기록하라. 수정 후 반드시 '$TEST_CMD' 를 실행해 통과를 확인하라. git commit/push 금지." \
+    "$fix_prompt" \
     > "$fix_result" || { echo "[FAIL] claude 실행 실패 (모델 '$SONNET_MODEL' 확인)"; exit 1; }
   claude_session_commit sonnet-fix
   log_claude_usage "impl-fix-a$attempt_tag-round-$tag" "$fix_result"
