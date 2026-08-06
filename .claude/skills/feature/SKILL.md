@@ -43,7 +43,9 @@ bash <skill_dir>/scripts/consensus-loop.sh design
 
 ## Phase 1.5 — 구현 문서 합의
 
-합의된 설계를 바탕으로 Fable(오케스트레이터)이 `.agent-work/implementation.md` 를 작성한다. 포함: 파일 목록·수정 순서, 클래스/함수 수준 계획, 테스트 목록, 완료 기준. 그 후:
+합의된 설계를 바탕으로 Fable(오케스트레이터)이 `.agent-work/implementation.md` 를 작성한다. 포함: 파일 목록·수정 순서, 클래스/함수 수준 계획, 테스트 목록, 완료 기준.
+
+**작성 원칙 — 독자는 Luna(codex, 저장소 사전 문맥 없음)와 Sonnet이다. 항상 이 둘이 제일 잘 이해할 수 있는 구조로 쓴다**: 추가 탐색 없이 그대로 실행 가능하게 파일 경로·함수명·호출부를 전부 명시하고, 코드 스니펫은 복붙 가능한 수준으로, 따라야 할 기존 컨벤션은 대상 파일명으로 지목한다. '적절히', '기존 방식대로' 같은 모호한 지시어 금지. 그 후:
 
 ```bash
 bash <skill_dir>/scripts/consensus-loop.sh impl
