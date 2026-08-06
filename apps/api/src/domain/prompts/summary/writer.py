@@ -75,6 +75,20 @@ async def maybe_update_summary(conversation_id: str) -> None:
     
             prompt_ctx: PromptContext = resolve_prompt_context(conn, conversation_id)
             ctx: dict = build_ctx(prompt_ctx.plot, prompt_ctx.chars[0], prompt_ctx.user)
+            relationship_target_line_values: list[str] = []
+            
+            for character in prompt_ctx.chars:
+                character_ctx: dict = build_ctx(prompt_ctx.plot, character, prompt_ctx.user)
+                character_name: str = character_ctx["char"]
+                relationship_target_line: str = (
+                    f"- {character_name}→{ctx['user']}: "
+                    "현재 태도 한 줄 (변화: 이전→현재)."
+                )
+                relationship_target_line_values.append(relationship_target_line)
+            
+            relationship_target_lines: str = "\n".join(relationship_target_line_values)
+            
+            ctx = {**ctx, "relationship_targets": relationship_target_lines}
 
         summary_system_prompt: dict = json.loads(_SUMMARY_SYSTEM_PROMPT_PATH.read_text(encoding="utf-8"))
         warnings: list = []

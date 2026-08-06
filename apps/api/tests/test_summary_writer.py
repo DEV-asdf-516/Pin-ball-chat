@@ -1,10 +1,11 @@
+from collections.abc import AsyncIterator, Callable
 import os
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from ai.errors import ProviderErrorCode, ProviderRuntimeError
-from ai.specs import ProviderName
+from ai.specs import GenerateRequest, ProviderName
 from core.db import new_id
 from core.db.sqlite import connect as _sqlite_connect, init_db
 from domain.prompts.summary.chunks import (
@@ -248,6 +249,83 @@ class SummaryWriterTests(unittest.IsolatedAsyncioTestCase):
         state = self._summary_state()
         self.assertEqual(calls, 4)
         self.assertEqual(state["summary_through_rowid"], rowids[-1])
+
+    async def test_single_character_relationship_line_still_generated(self) -> None:
+        rowids: list[int] = self._insert_pending_messages(["first"])
+        requests: list[GenerateRequest] = []
+        rendered_warnings: list[list] = []
+        real_render_value: Callable[[object, dict, list], str] = writer.render_value
+
+        def _render_value(template: object, ctx: dict, warnings: list) -> str:
+            rendered: str = real_render_value(template, ctx, warnings)
+            rendered_warnings.append(warnings)
+            return rendered
+
+        def _stream_text(request: GenerateRequest, provider_name: ProviderName) -> AsyncIterator[str]:
+            requests.append(request)
+            return _tokens("summary-1")
+
+        with (
+            patch.object(writer, "connect", self._connect),
+            patch.object(writer, "RECENT_WINDOW", self._RECENT_WINDOW),
+            patch.object(writer, "SUMMARY_TRIGGER", len(rowids)),
+            patch.object(writer, "render_value", _render_value),
+            patch.object(writer, "stream_text", _stream_text),
+        ):
+            await writer.maybe_update_summary("conv-1")
+
+        instruction: str = requests[0].system
+        relationship_bullets: list[str] = [line for line in instruction.splitlines() if line.startswith("- ")]
+        expected_bullets: list[str] = ["- 캐릭→사용자: 현재 태도 한 줄 (변화: 이전→현재)."]
+        self.assertEqual(relationship_bullets, expected_bullets)
+        self.assertNotIn("{{", instruction)
+        self.assertNotIn("}}", instruction)
+        self.assertTrue(rendered_warnings)
+        for warnings in rendered_warnings:
+            self.assertEqual(warnings, [])
+
+    async def test_relationship_instruction_lists_all_characters_in_sort_order(self) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO characters (id, name, plot_id, sort_order, profile_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+                ("char-2", "char2", "plot-1", 1, '{"id":"char-2","type":"character","sourceText":"","name":"캐릭2"}', "t", "t"),
+            )
+            conn.commit()
+        rowids: list[int] = self._insert_pending_messages(["first"])
+        requests: list[GenerateRequest] = []
+        rendered_warnings: list[list] = []
+        real_render_value: Callable[[object, dict, list], str] = writer.render_value
+
+        def _render_value(template: object, ctx: dict, warnings: list) -> str:
+            rendered: str = real_render_value(template, ctx, warnings)
+            rendered_warnings.append(warnings)
+            return rendered
+
+        def _stream_text(request: GenerateRequest, provider_name: ProviderName) -> AsyncIterator[str]:
+            requests.append(request)
+            return _tokens("summary-1")
+
+        with (
+            patch.object(writer, "connect", self._connect),
+            patch.object(writer, "RECENT_WINDOW", self._RECENT_WINDOW),
+            patch.object(writer, "SUMMARY_TRIGGER", len(rowids)),
+            patch.object(writer, "render_value", _render_value),
+            patch.object(writer, "stream_text", _stream_text),
+        ):
+            await writer.maybe_update_summary("conv-1")
+
+        instruction: str = requests[0].system
+        relationship_bullets: list[str] = [line for line in instruction.splitlines() if line.startswith("- ")]
+        expected_bullets: list[str] = [
+            "- 캐릭→사용자: 현재 태도 한 줄 (변화: 이전→현재).",
+            "- 캐릭2→사용자: 현재 태도 한 줄 (변화: 이전→현재).",
+        ]
+        self.assertEqual(relationship_bullets, expected_bullets)
+        self.assertNotIn("{{", instruction)
+        self.assertNotIn("}}", instruction)
+        self.assertTrue(rendered_warnings)
+        for warnings in rendered_warnings:
+            self.assertEqual(warnings, [])
 
 
 if __name__ == "__main__":
