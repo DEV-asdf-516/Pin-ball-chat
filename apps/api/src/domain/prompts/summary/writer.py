@@ -9,7 +9,7 @@ from ai.specs import GenerateRequest, Message
 from core.db import DATA_ROOT, Bind, RawSQL, ReadQuery, WriteQuery, connect, fetch_all, fetch_one, find_one, init_db, session, update
 from domain.conversations.reader import active_messages_sql
 from domain.conversations.specs import CONVERSATIONS
-from domain.prompts.context import RECENT_WINDOW, SUMMARY_TRIGGER, build_ctx, described, render_value, resolve_prompt_context
+from domain.prompts.context import RECENT_WINDOW, SUMMARY_TRIGGER, PromptContext, build_ctx, described, render_value, resolve_prompt_context
 from domain.prompts.summary.chunks import drop_ooc_only_turns, render_summary_dialogue, smaller_summary_chunk_char_limit, summary_chunk_char_limit, take_summary_chunk
 from domain.specs import GenerationParams
 from util.safe_util import get_safe_str, parse_json_dict
@@ -73,8 +73,8 @@ async def maybe_update_summary(conversation_id: str) -> None:
                 params = GenerationParams(model=last_gen["model_id"], provider_name=provider_name)
          
     
-            _, plot, chars, user = resolve_prompt_context(conn, conversation_id)
-            ctx: dict = build_ctx(plot, chars[0], user)
+            prompt_ctx: PromptContext = resolve_prompt_context(conn, conversation_id)
+            ctx: dict = build_ctx(prompt_ctx.plot, prompt_ctx.chars[0], prompt_ctx.user)
 
         summary_system_prompt: dict = json.loads(_SUMMARY_SYSTEM_PROMPT_PATH.read_text(encoding="utf-8"))
         warnings: list = []

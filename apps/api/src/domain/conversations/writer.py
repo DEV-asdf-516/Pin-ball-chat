@@ -10,7 +10,7 @@ from domain.conversations.importer.session_store import StoredImportSession
 from domain.conversations.importer.validation import ImportedMessage
 from domain.conversations.reader import get_conversation, get_conversation_settings
 from domain.conversations.specs import CONVERSATION_SETTINGS, CONVERSATIONS
-from domain.prompts.context import build_ctx, render_value, resolve_prompt_context, row_json
+from domain.prompts.context import PromptContext, build_ctx, render_value, resolve_prompt_context, row_json
 from domain.specs import ActionType, GenerationParams
 from domain.turns.specs import GENERATION_EDITS, GENERATIONS, MESSAGES, TURNS, USER_ACTIONS
 from util.safe_util import get_safe_dict, get_safe_list
@@ -25,16 +25,16 @@ def _materialize_intro(conn: sqlite3.Connection, conversation_id: str) -> None:
     if has_turns:
         return
 
-    _, plot, chars, user = resolve_prompt_context(conn, conversation_id)
-    
-    plot_json: dict = row_json(plot, "plot_json")
+    prompt_ctx: PromptContext = resolve_prompt_context(conn, conversation_id)
+
+    plot_json: dict = row_json(prompt_ctx.plot, "plot_json")
     intro: dict = get_safe_dict(plot_json, "intro")
     blocks: list[dict] = get_safe_list(intro, "blocks")
-    
+
     if not blocks:
         return
 
-    ctx: dict = build_ctx(plot, chars[0], user)
+    ctx: dict = build_ctx(prompt_ctx.plot, prompt_ctx.chars[0], prompt_ctx.user)
     warnings: list = []
     ts: str = utc_now_string()
 
